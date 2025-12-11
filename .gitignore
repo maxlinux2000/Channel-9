@@ -1,0 +1,8 @@
+*.deb
+debs/
+OLD/
+piper_download_temp/
+tmp/
+piper_models_staging/
+whisper.cpp_build/
+whisper_staging/
