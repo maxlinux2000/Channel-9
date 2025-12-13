@@ -214,9 +214,9 @@ if [ "$OPERATION_MODE" = "2" ]; then
     echo "export RESPONSE_MESSAGE=\"$RESPONSE_MESSAGE\""
 fi
 
-} > "$HOME/.loro-config"
+} > "$HOME/.CH9-config"
 
 echo "========================================================"
-echo "✅ Archivo de configuración guardado en: $HOME/.loro-config"
+echo "✅ Archivo de configuración guardado en: $HOME/.CH9-config"
 echo "Modo seleccionado: $MODE_SELECT"
 echo "========================================================"

@@ -6,6 +6,7 @@ WHISPER_VERSION="1.4.0"
 PACKAGE_NAME="whisper-cpp-cli"
 INSTALL_PREFIX="/opt/whisper-cpp"
 BUILD_DIR="whisper.cpp_build"
+MODEL=small  # modelo linguistico
 
 # --- 1. Control de Dependencias ---
 
@@ -49,10 +50,10 @@ make clean
 # Compilamos, el binario 'main' se crea en la raíz de la compilación.
 make || { echo "Error en la compilación de whisper.cpp."; exit 1; }
 
-# --- 4. Descargar el Modelo Base ---
-echo "3. Descargando el modelo ggml-base.bin..."
+# --- 4. Descargar el Modelo  ---
+echo "3. Descargando el modelo ggml-$MODEL.bin..."
 # Este comando descarga la versión multilingual.
-bash ./models/download-ggml-model.sh base || { echo "Error al descargar el modelo."; exit 1; }
+bash ./models/download-ggml-model.sh $MODEL || { echo "Error al descargar el modelo."; exit 1; }
 
 # --- 5. Preparar la Estructura de Instalación Temporal ---
 echo "4. Creando la estructura temporal en staging..."
@@ -76,8 +77,8 @@ cp ./build/src/libwhisper.so.1 "$STAGING_DIR/$INSTALL_PREFIX/bin/"
 # 🚨 CORRECCIÓN FINAL 2: Copiar todas la librerías compartida.
 cp ./build/ggml/src/*libggml* "$STAGING_DIR/$INSTALL_PREFIX/bin/"
 
-# 🚨 CORRECCIÓN 2: El modelo descargado se llama ggml-base.bin.
-cp ./models/ggml-base.bin "$STAGING_DIR/$INSTALL_PREFIX/models/"
+# 🚨 CORRECCIÓN 2: El modelo descargado se llama ggml-$MODEL.bin.
+cp ./models/ggml-$MODEL.bin "$STAGING_DIR/$INSTALL_PREFIX/models/"
 
 # --- 6. Crear el Paquete .deb con fpm ---
 echo "5. Creando el paquete .deb..."
@@ -92,13 +93,13 @@ fpm -s dir -t deb --force \
     --url "https://github.com/ggerganov/whisper.cpp" \
     --category "utils" \
     --maintainer "Tu Nombre <tu@email.com>" \
-    -p "../${PACKAGE_NAME}-${WHISPER_VERSION}.deb" \
+    -p "../${PACKAGE_NAME}-${WHISPER_VERSION}_$MODEL.deb" \
     --prefix / \
     .
 
 # --- 7. Limpieza ---
 cd ..
-rm -rf "$BUILD_DIR" "$STAGING_DIR"
+#rm -rf "$BUILD_DIR" "$STAGING_DIR"
 
 echo "=========================================================="
 echo "✅ ¡PAQUETE .DEB CREADO CON ÉXITO!"
