@@ -1,5 +1,5 @@
 #!/bin/bash
-### install_piper_models_deb.sh - Descarga modelos de Piper de forma masiva y los empaqueta por idioma
+### build_piper_models_deb.sh - Descarga modelos de Piper de forma masiva y los empaqueta por idioma
 
 # --- Variables de Configuración Global ---
 PIPER_VERSION="1.2.0"

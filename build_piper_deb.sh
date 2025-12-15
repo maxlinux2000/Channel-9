@@ -1,5 +1,5 @@
 #!/bin/bash
-### install_piper_deb.sh - Crea el paquete DEB base para Piper TTS (Binario y Venv)
+### build_piper_deb.sh - Crea el paquete DEB base para Piper TTS (Binario y Venv)
 
 # --- Variables de Configuración Global ---
 PIPER_VERSION="1.2.0"

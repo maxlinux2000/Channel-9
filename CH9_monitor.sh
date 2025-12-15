@@ -54,40 +54,34 @@ KEYWORDS=$(echo "$KEYWORDS" | tr -d '\r' | sed 's/\xc2\xa0/ /g' | sed 's/|/ /g' 
 ENABLE=1
 RAMDISK=/dev/shm
 USER=$(whoami)
-DEBUG=1
+DEBUG=0
 
 # VARIABLE DE LOG
 LOG_FILE="$HOME/ch9_monitor.log"
 touch "$LOG_FILE" 
 
-# 4. INICIALIZACIÓN DEL WATCHDOG (Control de tiempo de uso diario)
-echo "1" > /dev/shm/$USER/watchdog.log
+# 4. INICIALIZACIÓN DEL ENTORNO
+# Se eliminó la inicialización del watchdog.
 
 # 5. PREPARACIÓN DEL ENTORNO DE GRABACIÓN
-mkdir -p $RAMDISK/$USER/vox
-rm $RAMDISK/$USER/audio*.wav 2>/dev/null
+#mkdir -p $RAMDISK/$USER/vox
+#rm $RAMDISK/$USER/audio*.wav 2>/dev/null
 
-DURATION=$(echo "($MinMexDuration * 1000000)/1" | bc) #"
 
-rm $RAMDISK/$USER/vox/vox.wav 
-if [ ! -f $RAMDISK/$USER/vox/vox.wav ]; then
-    sox -V -r $FREQ -n -b 16 -c 1 $RAMDISK/$USER/vox/vox.wav synth 0.5 sin 440 vol -10dB
-fi
-cp /usr/local/share/loro/sounds/messagereceived.wav $RAMDISK/$USER/vox/ 2>/dev/null
+#rm $RAMDISK/$USER/vox/vox.wav 
+#if [ ! -f $RAMDISK/$USER/vox/vox.wav ]; then
+#    sox -V -r $FREQ -n -b 16 -c 1 $RAMDISK/$USER/vox/vox.wav synth 0.5 sin 440 vol -10dB
+#fi
+#cp /usr/local/share/loro/sounds/messagereceived.wav $RAMDISK/$USER/vox/ 2>/dev/null
 
-SystemStop=0
 
 # 6. BUCLE PRINCIPAL DE MONITOREO (VOX Loop)
+
+DURATION=$(echo "($MinMexDuration * 1000000)/1" | bc) #"
 while true; do
     
-    # 6.1. CÁLCULO Y GESTIÓN DEL TIEMPO TOTAL DE USO (Watchdog)
-    TotTimeDone=$(while read -r num; do ((sum += num)); done < /dev/shm/$USER/watchdog.log; echo $sum)
-    if [ $TotTimeDone -gt $TimeTotal ]; then
-        ENABLE=0
-        SystemStop=1
-    else
-        SystemStop=0
-    fi
+    # 6.1. ESTADO DEL SISTEMA (Watchdog eliminado)
+    # SystemStop y TotTimeDone eliminados. ENABLE siempre será 1 si el script está corriendo.
 
     # 6.2. MUESTRA EL ESTADO Y LOS ÚLTIMOS MENSAJES
     if [ "$DEBUG" = 0 ]; then clear; fi
@@ -97,7 +91,7 @@ while true; do
 
     echo "
 ########################################################
-# MODO MONITOR CB - ENABLE=$ENABLE - SystemStop=$SystemStop - TotTimeDone=$TotTimeDone 
+# MODO MONITOR CB - ENABLE=$ENABLE
 ########################################################"
 
     echo "--- Últimos 5 Mensajes Registrados ---"
@@ -105,7 +99,7 @@ while true; do
     echo "--------------------------------------"
 
     # 6.3. COMANDO CRÍTICO DE SQUELCH (TRIPLE PIPE)
-    AUDIODRIVER=$AUDIODRIVER AUDIODEV=$AUDIODEV rec -V0 -r $FREQ -e signed-integer -b 16 -c 1 --endian little    -p  | sox -p -p silence 0 1 0:$TIME 10% | sox -p -r $FREQ -e signed-integer -b 16 -c 1 --endian little $RAMDISK/$USER/audio.wav compand 0.3,1 6:-70,-60,-20 -5 -90 0.2    silence 0 1 0:02 10% : newfile
+    AUDIODRIVER=$AUDIODRIVER AUDIODEV=$AUDIODEV rec -V0 -r $FREQ -e signed-integer -b 16 -c 1 --endian little    -p  | sox -p -p silence 0 1 0:$TIME 10% | sox -p -r $FREQ -e signed-integer -b 16 -c 1 --endian little $RAMDISK/$USER/audio.wav compand 0.3,1 6:-70,-60,-20 -5 -90 0.2  silence 0 1 0:02 10% : newfile
 
     # 6.4. PROCESAMIENTO POST-GRABACIÓN
     ls $RAMDISK/$USER/*.wav > $RAMDISK/$USER/list.log
@@ -126,9 +120,9 @@ while true; do
             else
                 # 6.5. LÓGICA ESPECÍFICA DEL MODO MONITOR CB
                 if [ $ENABLE = 1 ]; then
-                    MexDuration=$(echo "( $size2 / 1000000 )*1" | bc)
+                    MexDuration=$(echo "( $size2 / 1000000 )*1" | bc) #"
                     
-                    echo "$MexDuration" >> $RAMDISK/$USER/watchdog.log # Acumular tiempo #"
+                    # Se eliminó la acumulación de tiempo en watchdog.log
 
                     # 1. Transcribir el audio (Captura el texto crudo)
                     TRANSCRIPT_RAW=$(whisper_transcribe "$audio")
@@ -174,10 +168,30 @@ while true; do
                         echo "🚨 ALERTA DETECTADA: Palabra clave encontrada: [$DETECTED_WORD]" 
                         
                         # REGISTRO DE ALERTA: Texto limpio + Etiqueta
-                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - STATUS=$STATUS - ALERTA!! - $TRANSCRIPT"
+                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - ALERTA!! - $TRANSCRIPT"
                         echo "$LOG_ENTRY" >> "$LOG_FILE"
                         
-                        # 4. Enviar Correo de Alerta
+                        # ----------------------------------------------------------------
+                        # PASO 4.1: CONVERSIÓN A OGG PARA COMPATIBILIDAD CON DELTACHAT
+                        # ----------------------------------------------------------------
+                        # Creamos la ruta para el archivo OGG en el mismo directorio (RAMDISK)
+                        OGG_AUDIO="${audio%.wav}.ogg"
+                        echo "INFO: Convirtiendo $audio a formato OGG ($OGG_AUDIO) para adjuntar..." >&2
+                        
+                        # Usamos ffmpeg para la conversión (codec libvorbis, calidad 5).
+                        ffmpeg -i "$audio" -c:a libvorbis -qscale:a 5 "$OGG_AUDIO" -y > /dev/null 2>&1
+                        
+                        if [ $? -ne 0 ] || [ ! -f "$OGG_AUDIO" ]; then
+                            echo "ERROR: Falló la conversión a OGG. Adjuntando WAV original." >&2
+                            FILE_TO_ATTACH="$audio"
+                            ATTACHMENT_INFO="WAV original"
+                        else
+                            FILE_TO_ATTACH="$OGG_AUDIO"
+                            ATTACHMENT_INFO="OGG para Deltachat"
+                            echo "INFO: Conversión a OGG exitosa. Adjuntando $FILE_TO_ATTACH." >&2
+                        fi
+                        
+                        # 4.2. Enviar Correo de Alerta
                         EMAIL_SUBJECT="[Channel-9] 🚨 ALERTA DE EMERGENCIA POR RADIO 🚨"
                         EMAIL_BODY="
 ==============================================
@@ -193,35 +207,37 @@ Duración: $MexDuration segundos
 $TRANSCRIPT
 --- Fin de Transcripción ---
 
-Se adjunta el archivo de audio original ($audio) para su revisión.
+Se adjunta el archivo de audio ($ATTACHMENT_INFO) para su revisión.
 "
-                        echo "$EMAIL_BODY" | mail -s "$EMAIL_SUBJECT" "$EMAIL_RECIPIENT" -A "$audio"
+                        # USANDO mutt -a PARA ADJUNTAR EL ARCHIVO CONVERTIDO (OGG o WAV)
+                        echo "$EMAIL_BODY" | mutt -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$EMAIL_RECIPIENT"
                         echo "✅ Correo de alerta de emergencia enviado a $EMAIL_RECIPIENT."
 
-cp $audio .
+                        cp "$audio" . # Mantenemos esta línea para debug, copiando el WAV original antes de borrar
+
+                        # 4.3. Limpieza de archivos de audio
+                        rm -f "$audio" "$OGG_AUDIO" 2>/dev/null
+
                     else
                         # REGISTRO DE MENSAJE NORMAL: Texto limpio sin etiqueta
-                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - STATUS=$STATUS - $TRANSCRIPT"
+                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - $TRANSCRIPT"
                         echo "$LOG_ENTRY" >> "$LOG_FILE"
                         
                         echo "INFO: Modo Monitor CB: No se detectaron palabras clave. Omitiendo alerta."
+                        # Limpiar el archivo WAV en caso de no alerta
+                        rm -f "$audio" 2>/dev/null 
                     fi
                 fi
             fi
         fi
-        rm $audio 2> /dev/null # Limpieza del archivo
+        # Se eliminó la limpieza final al final del 'for' loop
     done
     
     # 6.6. LIMPIEZA Y PAUSA DEL BUCLE
     sleep 0.3
     :> $RAMDISK/$USER/size.log
     
-    # 6.7. RESET DIARIO DEL WATCHDOG
-    HOUR=$(date '+%H')
-    if [ $HOUR = 23 ]; then
-        echo "1" > /dev/shm/$USER/watchdog.log
-        SystemStop=0
-    fi
+    # 6.7. RESET DIARIO (Eliminado)
+    # Se eliminó la lógica de reset diario del watchdog.
 done
 exit 0
-

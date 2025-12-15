@@ -32,15 +32,15 @@ source "$CONFIG_FILE"
 case "$OPERATION_MODE" in
     1)
         echo "INFO: Iniciando modo 1 (Loro/Parrot)..."
-        exec ./CH9_loro.sh
+        exec CH9_loro.sh
         ;;
     2)
         echo "INFO: Iniciando modo 2 (Secretaría Telefónica)..."
-        exec ./CH9_secretaria.sh
+        exec CH9_secretaria.sh
         ;;
     3)
         echo "INFO: Iniciando modo 3 (Monitor CB/Alerta)..."
-        exec ./CH9_monitor.sh
+        exec CH9_monitor.sh
         ;;
     *)
         echo "🚨 ERROR: Modo de operación no válido ($OPERATION_MODE). Verifica $CONFIG_FILE." >&2

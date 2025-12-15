@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Channel 9 Configuración
+Comment=Configura los modos de operación, palabras clave y cuenta de correo.
+Exec=bash -c "$HOME/.local/bin/CH9-config.sh"
+Icon=bash -c "echo $HOME/.local/share/icons/hicolor/256x256/CH9-config.png"
+Terminal=true
+Type=Application
+Categories=Settings;Utility;
+StartupNotify=true
+
