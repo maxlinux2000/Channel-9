@@ -11,7 +11,6 @@ export WHISPER_EXECUTABLE="/opt/whisper-cpp/bin/main"
 export WHISPER_MODEL_PATH="/opt/whisper-cpp/models/ggml-$MODEL.bin"
 export ASR_LANGUAGE="es"
 export LD_LIBRARY_PATH="/opt/whisper-cpp/bin/:$LD_LIBRARY_PATH"
-
 # ==============================================================================
 # 1. Función de Transcripción (INFO a stderr para limpiar $TRANSCRIPT)
 # ==============================================================================
@@ -44,6 +43,7 @@ whisper_transcribe() {
 
 # 2. CARGA DE CONFIGURACIÓN
 source $HOME/.CH9-config
+WRAPPER_SCRIPT="$HOME/.local/bin/mutt-msmtp.sh"
 
 # 📢 LIMPIEZA CRÍTICA DE VARIABLES DE CONFIGURACIÓN
 # FIX FINAL: Convertir KEYWORDS a minúsculas, reemplazar "|" por espacios, y limpiar
@@ -56,9 +56,13 @@ RAMDISK=/dev/shm
 USER=$(whoami)
 DEBUG=0
 
+MSMTP_RC="$HOME/.msmtprc"
+MSMTP_LOG="$HOME/.log/msmtp.log"
+
+
 # VARIABLE DE LOG
 LOG_FILE="$HOME/ch9_monitor.log"
-touch "$LOG_FILE" 
+touch "$LOG_FILE"
 
 # 4. INICIALIZACIÓN DEL ENTORNO
 # Se eliminó la inicialización del watchdog.
@@ -209,11 +213,49 @@ $TRANSCRIPT
 
 Se adjunta el archivo de audio ($ATTACHMENT_INFO) para su revisión.
 "
-                        # USANDO mutt -a PARA ADJUNTAR EL ARCHIVO CONVERTIDO (OGG o WAV)
-                        echo "$EMAIL_BODY" | mutt -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$EMAIL_RECIPIENT"
-                        echo "✅ Correo de alerta de emergencia enviado a $EMAIL_RECIPIENT."
 
-                        cp "$audio" . # Mantenemos esta línea para debug, copiando el WAV original antes de borrar
+# ==========================================================
+                        # SOLUCIÓN ROBUSTA: Envío de correo con configuración temporal mutt (-F)
+                        # Esto rompe el bucle de sub-shell al forzar la ruta del MTA.
+                        # ==========================================================
+                        TEMP_MUTTRC="$RAMDISK/$USER/temp_muttrc_ch9_$$"
+                        
+                        echo "INFO: Conversión a OGG exitosa. Adjuntando $FILE_TO_ATTACH."
+
+                        # 1. Crear el archivo de configuración temporal
+                        mkdir -p "$(dirname "$TEMP_MUTTRC")"
+                        
+                        # Forzar a mutt a usar el binario msmtp con su configuración específica.
+                        echo "set sendmail=\"/usr/bin/msmtp -C $MSMTP_RC --account=local\"" > "$TEMP_MUTTRC"
+                        echo "set use_envelope_from=yes" >> "$TEMP_MUTTRC" 
+                        
+                        # 2. Enviar el correo usando mutt con la configuración temporal (-F)
+                        echo "$EMAIL_BODY" | /usr/bin/mutt -F "$TEMP_MUTTRC" -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
+                        
+                        # Capturar el resultado del envío
+                        if [ $? -eq 0 ]; then
+                            echo "✅ Correo de alerta de emergencia enviado exitosamente a $LOCAL_EMAIL_TO."
+                        else
+                            echo "❌ ERROR al enviar correo de alerta a $LOCAL_EMAIL_TO. Revise el log de msmtp: $MSMTP_LOG"
+                        fi
+
+                        # 3. Limpieza del archivo de configuración temporal
+                        rm -f "$TEMP_MUTTRC"
+
+                        # ==========================================================
+
+                        # 4.3. Limpieza de archivos de audio
+                        rm -f "$audio" "$OGG_AUDIO" 2>/dev/null
+
+
+                        # USANDO el wrapper a mutt PARA ADJUNTAR EL ARCHIVO CONVERTIDO (OGG o WAV)
+                        # echo "$EMAIL_BODY" | mutt -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
+                        # echo "$EMAIL_BODY - $WRAPPER_SCRIPT  $EMAIL_SUBJECT  -a $FILE_TO_ATTACH  -- $LOCAL_EMAIL_TO"
+
+#                        echo "$EMAIL_BODY" | "$WRAPPER_SCRIPT" -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
+#                        echo "✅ Correo de alerta de emergencia enviado a $LOCAL_EMAIL_TO."
+
+                        # cp "$audio" . # Mantenemos esta línea para debug, copiando el WAV original antes de borrar
 
                         # 4.3. Limpieza de archivos de audio
                         rm -f "$audio" "$OGG_AUDIO" 2>/dev/null

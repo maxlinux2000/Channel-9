@@ -99,7 +99,7 @@ fpm -s dir -t deb --force \
 
 # --- 7. Limpieza ---
 cd ..
-#rm -rf "$BUILD_DIR" "$STAGING_DIR"
+rm -rf "$BUILD_DIR" "$STAGING_DIR"
 
 echo "=========================================================="
 echo "✅ ¡PAQUETE .DEB CREADO CON ÉXITO!"

@@ -61,10 +61,10 @@ echo "Creando lanzadores de escritorio en $APPLICATIONS_DIR..."
 # 5.1. Lanzador Principal: Channel-9.desktop
 cat <<EOF > "$APPLICATIONS_DIR/Channel-9.desktop"
 [Desktop Entry]
-Name=Channel 9 (Radio Automática)
+Name=Channel 9
 Comment=Sistema de automatización y monitoreo de emergencias de radio.
-Exec=bash -c "$HOME/.local/bin/CH9.sh"
-Icon=bash -c "echo \$HOME/.local/share/icons/hicolor/256x256/CH9.png"
+Exec=$HOME/.local/bin/CH9.sh
+Icon=$HOME/.local/share/icons/hicolor/256x256/CH9.png
 Terminal=true
 Type=Application
 Categories=Utility;Science;
@@ -76,10 +76,10 @@ echo "   -> Lanzador Channel-9.desktop creado."
 # 5.2. Lanzador Configuración: Channel-9-Config.desktop
 cat <<EOF > "$APPLICATIONS_DIR/Channel-9-Config.desktop"
 [Desktop Entry]
-Name=Channel 9 Configuración
+Name=Configuración Channel 9
 Comment=Configura los modos de operación, palabras clave y cuenta de correo.
-Exec=bash -c "$HOME/.local/bin/CH9-config.sh"
-Icon=bash -c "echo \$HOME/.local/share/icons/hicolor/256x256/CH9-config.png"
+Exec=$HOME/.local/bin/CH9-config.sh
+Icon=$HOME/.local/share/icons/hicolor/256x256/CH9-config.png
 Terminal=true
 Type=Application
 Categories=Settings;Utility;

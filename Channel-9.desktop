@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Channel 9 (Radio Automática)
-Comment=Sistema de automatización y monitoreo de emergencias de radio.
-Exec=bash -c "$HOME/.local/bin/CH9.sh"
-Icon=bash -c "echo $HOME/.local/share/icons/hicolor/256x256/CH9.png"
-Terminal=true
-Type=Application
-Categories=Utility;Science;
-StartupNotify=false
