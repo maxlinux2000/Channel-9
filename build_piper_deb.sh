@@ -2,7 +2,9 @@
 ### build_piper_deb.sh - Crea el paquete DEB base para Piper TTS (Binario y Venv)
 
 # --- Variables de Configuración Global ---
-PIPER_VERSION="1.2.0"
+# Versión por defecto para la mayoría de las arquitecturas (AMD64, etc.)
+PIPER_VERSION="1.2.0" 
+ARCH=$(dpkg --print-architecture)
 INSTALL_PREFIX="/opt/piper" # Ruta final del sistema para el Venv
 PACKAGE_NAME_BASE="piper-tts"
 BUILD_DIR="piper_build_staging" # Directorio temporal de trabajo
@@ -38,6 +40,7 @@ echo "2. Instalando Piper BASE en entorno virtual..."
 python3 -m venv ".$INSTALL_PREFIX/venv" 
 VENV_PIP="./$INSTALL_PREFIX/venv/bin/pip" 
 "$VENV_PIP" install piper-tts=="$PIPER_VERSION" || { echo "Error al instalar piper-tts."; exit 1; }
+
 
 echo " -> Corrigiendo Shebang del script 'piper' dentro del Venv..."
 VENV_PYTHON_SCRIPT="./$INSTALL_PREFIX/venv/bin/piper"

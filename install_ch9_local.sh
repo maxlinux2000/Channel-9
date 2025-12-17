@@ -4,6 +4,28 @@
 # Versión: 1.1 - Instalación local de Scripts, Iconos y Cache de Channel-9
 # ==============================================================================
 
+
+# Instalación de todas las dependencias
+sudo apt update
+sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y msmtp
+
+# Instalación de FPM
+sudo gem install fpm
+
+
+# 0 compilando e instalado Whisper y Piper
+./build_piper_deb.sh
+./build_piper_models_deb.sh
+./build_whisper_deb.sh
+
+mkdir debs
+mv *.deb debs/
+
+sudo apt install debs/*.deb
+
+
+
 echo "🚀 Iniciando instalación local de Channel-9..."
 
 # --- 1. DEFINICIÓN DE RUTAS LOCALES ---

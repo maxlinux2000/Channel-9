@@ -11,19 +11,34 @@ MODEL=small  # modelo linguistico
 # --- 1. Control de Dependencias ---
 
 echo "1. Verificando dependencias necesarias (git, cmake, make, ruby, fpm)..."
-
 # Instalar herramientas básicas de compilación si faltan
-command -v git >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: git no está instalado. Ejecute 'sudo apt install git'."; exit 1; }
-command -v cmake >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: cmake no está instalado. Ejecute 'sudo apt install cmake'."; exit 1; }
-command -v make >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: make no está instalado. Ejecute 'sudo apt install build-essential'."; exit 1; }
+#command -v git >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: git no está instalado. Ejecute 'sudo apt install git'."; exit 1; }
+#command -v cmake >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: cmake no está instalado. Ejecute 'sudo apt install cmake'."; exit 1; }
+#command -v make >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: make no está instalado. Ejecute 'sudo apt install build-essential'."; exit 1; }
+
+command -v git >/dev/null 2>&1 || {
+    echo "⚙️ Instalando git..."
+    sudo apt install git -y
+}
+command -v cmake >/dev/null 2>&1 || {
+    echo "⚙️ Instalando cmake..."
+    sudo apt install cmake -y
+}
+command -v make >/dev/null 2>&1 || {
+    echo "⚙️ Instalando make..."
+    sudo apt install make -y
+}
+
+
 
 # Instalar Ruby si no está presente (necesario para fpm)
 command -v ruby >/dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "⚙️ Instalando Ruby y Ruby-Dev (necesario para fpm)..."
     # El usuario debe ejecutar esto con sudo
-    echo "Por favor, ejecute: sudo apt install ruby ruby-dev"
-    exit 1
+#    echo "Por favor, ejecute: sudo apt install ruby ruby-dev"
+    sudo apt install ruby ruby-dev -y
+#    exit 1
 fi
 
 # Instalar fpm si no está presente
@@ -31,8 +46,9 @@ command -v fpm >/dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "⚙️ Instalando fpm (Fast Package Manager)..."
     # El usuario debe ejecutar esto
-    echo "Por favor, ejecute: sudo gem install fpm"
-    exit 1
+#    echo "Por favor, ejecute: sudo gem install fpm"
+#    exit 1
+    sudo gem install fpm
 fi
 
 echo "Dependencias verificadas. Continuando con la compilación..."

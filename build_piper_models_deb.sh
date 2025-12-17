@@ -2,7 +2,8 @@
 ### build_piper_models_deb.sh - Descarga modelos de Piper de forma masiva y los empaqueta por idioma
 
 # --- Variables de Configuración Global ---
-PIPER_VERSION="1.2.0"
+ARCH=$(dpkg --print-architecture)
+PIPER_VERSION="1.2.0" 
 PACKAGE_NAME_BASE="piper-tts"
 DOWNLOAD_DIR="piper_download_temp"
 BUILD_DIR="piper_models_staging"

@@ -35,11 +35,11 @@ Esta versión requiere que se compilen y se instalen las dependencias críticas 
 1.  **Hardware:** Un equipo de radio (CB/PMR) con salida de audio y una tarjeta de sonido USB/integrada en Linux.
 2.  **Sistema Operativo:** Distribución Linux basada en Debian/Ubuntu.
 3.  **Dependencias del Sistema:** Instalar las herramientas necesarias para la compilación y ejecución:
-    ```bash
-    sudo apt update
-    sudo apt install -y git cmake build-essential ruby ruby-dev python3 python3-venv sox ffmpeg zenity multimon-ng
-    sudo gem install fpm # Instalar el gestor de paquetes Ruby
-    ```
+    Todas las dependecias se instalan automaticamente y se compilan piper y whisper,
+    lanzando el instalador: install_ch9_local.sh
+
+    `bash install_ch9_local.sh`
+
 
 ### II. Construcción de Dependencias
 
@@ -72,3 +72,9 @@ Ejecute los *scripts* *builder* en el orden indicado para compilar y generar los
 | **Loro / Parrot** | 🛠️ **EN DESARROLLO** | La lógica de DTMF y contadores requiere pruebas. |
 
 **¡Agradecemos cualquier *feedback* o contribución para la fase de desarrollo!**
+
+
+Notas: **Se recomienda un servidor local como yunohost o el servidor AP para la gesión del correo electrónico local**
+
+       Es importante considerar que durante una emergencia muy probablemente no va a funcionar internet y por lo tanto el correo local
+       es la única forma de comunicarse.
