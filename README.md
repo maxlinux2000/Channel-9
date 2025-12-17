@@ -33,15 +33,17 @@ Esta versión requiere que se compilen y se instalen las dependencias críticas 
 ### I. Requisitos Previos
 
 1.  **Hardware:** Un equipo de radio (CB/PMR) con salida de audio y una tarjeta de sonido USB/integrada en Linux.
-2.  **Sistema Operativo:** Distribución Linux basada en Debian/Ubuntu.
-3.  **Dependencias del Sistema:** Instalar las herramientas necesarias para la compilación y ejecución:
-    Todas las dependecias se instalan automaticamente y se compilan piper y whisper,
+2.  **Sistema Operativo:** Distribución Linux basada en Debian/Ubuntu compatible con Debian 12 bookworm (old stable en el momento en que escribo).
+3.  **procesador intel/amd 64bit 4ª generación por arriba, o RaspberryPi4 64bit 2GB de RAM. (claramente en el pequeño Raspberry irá mucho más lento.**
+4.  **Dependencias del Sistema:** Instalar las herramientas necesarias para la compilación y ejecución:
+    Todas las dependencias se instalan automaticamente y se compilan piper y whisper,
     lanzando el instalador: install_ch9_local.sh
 
     `bash install_ch9_local.sh`
 
+NOTA: usar una OldStable es lo ideal para un sistema cerrado como esto donde lo más importante es la estabilidada que los sistema más actuales...carecen.
 
-### II. Construcción de Dependencias
+### II. Construcción de Dependencias (OBSOLETO)
 
 Ejecute los *scripts* *builder* en el orden indicado para compilar y generar los paquetes `.deb` con aislamiento.
 
@@ -54,14 +56,15 @@ Ejecute los *scripts* *builder* en el orden indicado para compilar y generar los
 ### III. Configuración y Ejecución
 
 1.  **Configuración:** Ejecute el *script* de configuración interactivo:
-    ```bash
-    ./CH9-config.sh
+    ```
+    CH9-config.sh
     # Seleccione el modo "3 - Monitor CB" e introduzca las palabras clave y el email de destino.
     ```
 2.  **Ejecución:** Inicie el núcleo del sistema:
-    ```bash
-    ./CH9.sh
     ```
+    CH9.sh
+    ```
+Nota: en los RPI hay que reinciar el sistema por hacer entrar en el PATH la carpeta $HOME/.local/bin
 
 ## ⚠️ Estado de Funcionalidad
 
@@ -74,7 +77,8 @@ Ejecute los *scripts* *builder* en el orden indicado para compilar y generar los
 **¡Agradecemos cualquier *feedback* o contribución para la fase de desarrollo!**
 
 
-Notas: **Se recomienda un servidor local como yunohost o el servidor AP para la gesión del correo electrónico local**
+Notas: **De momento Se recomienda un servidor local como yunohost o el servidor AP para la gesión del correo electrónico local, En un segundo momento haré un fullpack**
 
-       Es importante considerar que durante una emergencia muy probablemente no va a funcionar internet y por lo tanto el correo local
+       Es importante considerar que durante una emergencia muy probablemente 
+       no va a funcionar internet y por lo tanto el correo local
        es la única forma de comunicarse.

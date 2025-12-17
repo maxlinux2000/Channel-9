@@ -9,7 +9,7 @@
 MODEL="small"
 export WHISPER_EXECUTABLE="/opt/whisper-cpp/bin/main"
 export WHISPER_MODEL_PATH="/opt/whisper-cpp/models/ggml-$MODEL.bin"
-export ASR_LANGUAGE="es"
+# Ya no se usa ASR_LANGUAGE, se usará WHISPER_LANG del archivo de configuración.
 export LD_LIBRARY_PATH="/opt/whisper-cpp/bin/:$LD_LIBRARY_PATH"
 # ==============================================================================
 # 1. Función de Transcripción (INFO a stderr para limpiar $TRANSCRIPT)
@@ -25,11 +25,12 @@ whisper_transcribe() {
         return 1
     fi
 
-    echo "INFO: Transcribiendo archivo: $audio_file" >&2 
+    echo "INFO: Transcribiendo archivo: $audio_file (Idioma: $WHISPER_LANG)" >&2 
 
     # Ejecuta Whisper C++ y filtra la salida para obtener solo el texto.
+    # Se añade -l "$WHISPER_LANG" para especificar el idioma de transcripción.
     TRANSCRIPT_RESULT=$(
-        "$WHISPER_EXECUTABLE" -m "$WHISPER_MODEL_PATH" "$audio_file" -l "$ASR_LANGUAGE" -np -nt |\
+        "$WHISPER_EXECUTABLE" -m "$WHISPER_MODEL_PATH" "$audio_file" -l "$WHISPER_LANG" -np -nt |\
          tail -n 1 | sed 's|^[[:space:]]*||')
     
     # Guarda la transcripción en el archivo TXT (localmente en RAMDISK)
@@ -283,3 +284,4 @@ Se adjunta el archivo de audio ($ATTACHMENT_INFO) para su revisión.
     # Se eliminó la lógica de reset diario del watchdog.
 done
 exit 0
+

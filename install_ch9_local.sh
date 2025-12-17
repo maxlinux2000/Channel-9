@@ -14,6 +14,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y msmtp
 sudo gem install fpm
 
 
+echo "🚀 Iniciando la compilación de Piper y Whisper.cpp..."
+
 # 0 compilando e instalado Whisper y Piper
 ./build_piper_deb.sh
 ./build_piper_models_deb.sh
@@ -21,9 +23,9 @@ sudo gem install fpm
 
 mkdir debs
 mv *.deb debs/
-
-sudo apt install debs/*.deb
-
+cd debs/
+sudo apt install -y *.deb
+cd -
 
 
 echo "🚀 Iniciando instalación local de Channel-9..."

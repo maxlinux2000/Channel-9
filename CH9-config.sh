@@ -33,6 +33,8 @@ if [ -f "$CONFIG_FILE" ]; then
     PREV_EMAIL=$(echo "${EMAIL_FROM:-ch9@mi.arca}" | tr -d '"')
     PREV_LOCAL_EMAIL_TO=$(echo "${LOCAL_EMAIL_TO:-ch9_to@mi.arca}" | tr -d '"')
     PREV_RESPONSE=$(echo "${RESPONSE_MESSAGE:-}" | tr -d '"')
+    # NUEVA VARIABLE PARA EL IDIOMA
+    PREV_WHISPER_LANG=$(echo "${WHISPER_LANG:-es}" | tr -d '"')
     
     PREV_DTMF_START=$(echo "${START:-}" | tr -d '"')
     PREV_DTMF_STOP=$(echo "${STOP:-}" | tr -d '"')
@@ -55,6 +57,7 @@ else
     PREV_EMAIL="ch9@mi.arca"
     PREV_LOCAL_EMAIL_TO="ch9_to@mi.arca"
     PREV_RESPONSE=""
+    PREV_WHISPER_LANG="es" # Valor por defecto (CORRECTO)
     PREV_DTMF_START=""
     PREV_DTMF_STOP=""
     PREV_DTMF_STARTSYSOP=""
@@ -90,9 +93,10 @@ RESPONSE_MESSAGE=""
 START=""
 STOP=""
 StartSysop=""
-StartSysop=""
+StopSysop="" # Corregido: esta línea estaba duplicada
 OneMsg=0
 TimeTotal=0
+WHISPER_LANG="" # Inicializamos la nueva variable
 
 # ==============================================================================
 # 2. CONFIGURACIÓN ESPECÍFICA POR MODO
@@ -133,29 +137,56 @@ case "$OPERATION_MODE" in
         
     3|2) # MONITOR CB y SECRETARÍA TELEFÓNICA - Pedir Email (FROM y TO)
         
+        # Lista de idiomas disponibles y preparación para YAD (sin 'auto' y separador '!')
+        WHISPER_LANGS="es!en!de!fr!it!pt!ru!ja!zh!ko!ar!pl!sv!da!nl"
+        
+        # 1. Convertir la lista a líneas y ordenar alfabéticamente.
+        # 2. Reemplazar la línea que coincide con el valor previo por '^<lang>'.
+        # 3. Reconvertir a una sola línea separada por '!' para el combobox de YAD.
+        YAD_LANG_LIST=$(echo "$WHISPER_LANGS" | tr '!' '\n' | sort -f | while read lang; do
+            if [ "$lang" = "$PREV_WHISPER_LANG" ]; then
+                echo "^$lang" # Marca el valor como preseleccionado con ^
+            else
+                echo "$lang"
+            fi
+        done | tr '\n' '!')
+
+        # Eliminar el '!' final si existe
+        YAD_LANG_LIST=${YAD_LANG_LIST%!}
+        
         if [ "$OPERATION_MODE" = "3" ]; then
-            KEYWORDS_RAW=$(yad --entry \
+            
+            # --- FORMULARIO COMBINADO DE KEYWORDS/IDIOMA ---
+            KEYWORD_LANG_FIELDS=$(yad --form \
                 $YAD_GEOMETRY \
                 --title="Configuración de Alertas (Monitor CB)" \
-                --text="Introduce las PALABRAS CLAVE separadas por comas o espacios.\nEj: ayuda, fuego, accidente, emergencia" \
-                --entry-text="$PREV_KEYWORDS")
+                --text="Configura el idioma a detectar y las palabras clave de emergencia." \
+                --field="Idioma de Whisper (ISO 639-1):CB" "$YAD_LANG_LIST" \
+                --field="Palabras Clave (Separadas por coma o espacio):" "$PREV_KEYWORDS")
                 
             if [ $? -ne 0 ]; then exit 1; fi
             
+            # Extraer y procesar
+            WHISPER_LANG=$(echo $KEYWORD_LANG_FIELDS | cut -d '|' -f1)
+            KEYWORDS_RAW=$(echo $KEYWORD_LANG_FIELDS | cut -d '|' -f2)
+            
             # Procesar KEYWORDS: Reemplazar comas/espacios por pipe (|)
             KEYWORDS=$(echo "$KEYWORDS_RAW" | tr ', ' ' ' | sed 's/  */|/g' | sed 's/||*/|/g' | sed 's/^|//;s/|$//')
-        fi
         
-        if [ "$OPERATION_MODE" = "2" ]; then
-            RESPONSE_FIELDS=$(yad --form --title="Mensaje de Respuesta" \
+        else # Modo 2 - Secretaría Telefónica
+            # Solo pedimos la ruta del audio de respuesta y el idioma
+            RESPONSE_FIELDS=$(yad --form \
                 $YAD_GEOMETRY \
-                --text="Introduce la RUTA al archivo de audio (.wav) que se reproducirá como respuesta.\nSi se deja vacío, la secretaría no contesta." \
+                --title="Configuración de Secretaría Telefónica" \
+                --text="Introduce la RUTA al audio de respuesta y el idioma de Whisper." \
+                --field="Idioma de Whisper (ISO 639-1):CB" "$YAD_LANG_LIST" \
                 --field="Ruta a audio de respuesta (.wav):" "$PREV_RESPONSE" \
                 --separator="|")
                 
             if [ $? -ne 0 ]; then exit 1; fi
                 
-            RESPONSE_MESSAGE=$(echo $RESPONSE_FIELDS | cut -d '|' -f1)
+            WHISPER_LANG=$(echo $RESPONSE_FIELDS | cut -d '|' -f1)
+            RESPONSE_MESSAGE=$(echo $RESPONSE_FIELDS | cut -d '|' -f2)
         fi
         
         # --- FORMULARIO COMBINADO PARA CORREO (FROM y TO) ---
@@ -268,15 +299,18 @@ if [ "$OPERATION_MODE" = "1" ]; then
     echo "export OneMsg=\"$OneMsg\""
     echo "export TimeTotal=\"$TimeTotal\""
 elif [ "$OPERATION_MODE" = "2" ] || [ "$OPERATION_MODE" = "3" ]; then
+    # Usamos los valores previos ya que no se preguntaron en Modo 2 o 3
     echo "export OneMsg=\"$PREV_ONEMSG\"" 
     echo "export TimeTotal=\"$PREV_TIMETOTAL\""
 fi
 echo ""
 
-# Variables específicas del modo (Email, Keywords, Respuesta)
+# Variables específicas del modo (Email, Keywords, Respuesta, IDIOMA)
 if [ "$OPERATION_MODE" = "3" ] || [ "$OPERATION_MODE" = "2" ]; then
     echo "export EMAIL_FROM=\"$EMAIL_FROM\""
     echo "export LOCAL_EMAIL_TO=\"$LOCAL_EMAIL_TO\""
+    # NUEVA LÍNEA: GUARDAR IDIOMA
+    echo "export WHISPER_LANG=\"$WHISPER_LANG\""
 fi
 
 if [ "$OPERATION_MODE" = "3" ]; then
@@ -299,7 +333,7 @@ echo "========================================================"
 # ==============================================================================
 # 5. CONFIGURACIÓN DE CORREO LOCAL (UNIFICADA - Solo si es Modo 2 o 3)
 # ==============================================================================
-
+# ... (El bloque de configuración de msmtp no ha cambiado y es el que usará Mutt)
 if [ "$OPERATION_MODE" = "2" ] || [ "$OPERATION_MODE" = "3" ]; then
     
     echo "INFO: El modo seleccionado requiere correo. Iniciando configuración de msmtp..."
