@@ -11,9 +11,9 @@ DOWNLOAD_DIR="lt_models_download_temp"
 BUILD_DIR="lt_models_staging"
 
 # Ruta donde LibreTranslate espera encontrar los modelos: /usr/share/libretranslate/models
-MODEL_INSTALL_PATH="/usr/share/$PACKAGE_NAME_BASE/models" 
+MODEL_INSTALL_PATH="/usr/share/${PACKAGE_NAME_BASE}/models" 
 
-# --- Variables de Repositorio Local (NUEVAS) ---
+# --- Variables de Repositorio Local ---
 # Ruta donde se guardarán los paquetes DEB de arquitectura 'all'
 REPO_PATH="${HOME}/public_html/ch9/debian/pool/${ARCH}"
 
@@ -29,6 +29,7 @@ export FPM_TEMP="$ABSOLUTE_FPM_TMP_PATH"
 # --- 1. Preparación y Descarga de Índice de Modelos ---
 echo "--- 1. Preparación y Descarga de Índice de Modelos ---"
 
+# Control de dependencias (se asume que jq y wget están instalados o se instalarán)
 command -v wget >/dev/null 2>&1 || { 
     echo "Instalando wget..."
     sudo apt update && sudo apt install -y wget
@@ -39,19 +40,17 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 # Preparamos directorios
-rm -rf "$DOWNLOAD_DIR" "$BUILD_DIR"-* "$FPM_TMP_BASE" # Añadimos limpieza del temporal
+rm -rf "$DOWNLOAD_DIR" "$BUILD_DIR"-* "$FPM_TMP_BASE"
 mkdir -p "$DOWNLOAD_DIR"
 mkdir -p "$FPM_TMP_BASE" # Creamos el directorio temporal para fpm
-rm -f ${PACKAGE_NAME_BASE}-model-*.deb # Limpiamos .deb anteriores
 
 # Descargar el archivo índice
-echo "-> Intentando descargar el índice de modelos desde: $MODEL_INDEX_URL"
-wget -c "$MODEL_INDEX_URL" -O "$MODEL_INDEX_FILE" || { echo "Error al descargar $MODEL_INDEX_FILE."; exit 1; }
+echo "-> Intentando descargar el índice de modelos desde: ${MODEL_INDEX_URL}"
+wget -c "${MODEL_INDEX_URL}" -O "$MODEL_INDEX_FILE" || { echo "Error al descargar $MODEL_INDEX_FILE."; exit 1; }
 
 # --- 2. Procesar JSON y Descargar Modelos ---
 echo "--- 2. Procesando el índice para obtener URLs y códigos de modelos ---"
 
-# CRÍTICO: Nueva lógica de jq: 
 MODEL_LIST=$(jq -r '.[] | select(.links[0] | endswith(".argosmodel")) | "\(.links[0]) \(.code)"' "$MODEL_INDEX_FILE")
 
 if [ -z "$MODEL_LIST" ]; then
@@ -67,7 +66,7 @@ while read -r MODEL_URL MODEL_CODE_PAIR; do
     wget -c "$MODEL_URL" -O "$DOWNLOAD_DIR/$FILENAME" || { echo "Advertencia: Error al descargar $FILENAME. Continuando..."; }
 done <<< "$MODEL_LIST"
 
-# --- 4. Empaquetar Modelos (.deb) por separado (MODIFICADO) ---
+# --- 4. Empaquetar Modelos (.deb) por separado ---
 echo "--- 4. Creando paquetes .deb para cada modelo descargado ---"
 echo "INFO: Los paquetes se guardarán en: ${REPO_PATH}"
 
@@ -77,12 +76,12 @@ mkdir -p "${REPO_PATH}"
 # Itera sobre los archivos .argosmodel descargados
 for MODEL_FILE in "$DOWNLOAD_DIR"/*.argosmodel; do
     if [ ! -f "$MODEL_FILE" ]; then
-        continue # Si no hay archivos .argosmodel, salta
+        continue 
     fi
     
     FILENAME=$(basename "$MODEL_FILE")
     
-    # Extraemos el par de idiomas (ej: sq_en) del nombre del archivo: translate-sq_en-1_9.argosmodel
+    # Extraemos el par de idiomas (ej: sq_en) del nombre del archivo
     LANG_PAIR=$(echo "$FILENAME" | sed -E 's/translate-([a-z]{2}_[a-z]{2}).*/\1/') 
     
     if [ -z "$LANG_PAIR" ]; then
@@ -99,7 +98,7 @@ for MODEL_FILE in "$DOWNLOAD_DIR"/*.argosmodel; do
     rm -rf "$LANG_STAGING_DIR"
     mkdir -p "$FINAL_DEST_DIR"
     
-    echo "-> Empaquetando modelo: $FILENAME (Paquete: $PACKAGE_FULL_NAME)..."
+    echo "-> Empaquetando modelo: $FILENAME (Paquete: ${PACKAGE_FULL_NAME}) [${ARCH}]..."
 
     # Copiar el archivo .argosmodel descargado al directorio de destino final
     cp "$MODEL_FILE" "$FINAL_DEST_DIR/"
@@ -107,14 +106,11 @@ for MODEL_FILE in "$DOWNLOAD_DIR"/*.argosmodel; do
     # --- 4.1 Creación del Paquete .deb ---
     MODEL_PRE_INSTALL_SCRIPT="${LANG_PAIR}-pre-install.sh"
     echo "echo 'Instalando modelo ($FILENAME) para LibreTranslate...' y creando directorio de destino." > "$MODEL_PRE_INSTALL_SCRIPT"
-    # El directorio /usr/share/libretranslate/models se crea en el paquete base, pero lo creamos aquí por seguridad.
-    echo "mkdir -p $MODEL_INSTALL_PATH" >> "$MODEL_PRE_INSTALL_SCRIPT"
+    echo "mkdir -p ${MODEL_INSTALL_PATH}" >> "$MODEL_PRE_INSTALL_SCRIPT"
     chmod +x "$MODEL_PRE_INSTALL_SCRIPT"
 
     # Nombre final del DEB: nombre_version_all.deb
     DEB_MODEL_FILENAME="${PACKAGE_FULL_NAME}_${LT_VERSION}_${ARCH}.deb"
-
-    # Ya no necesitamos crear y limpiar LOCAL_FPM_TMP_PATH aquí, usamos el global FPM_TEMP exportado.
 
     fpm -s dir -t deb --force \
         --before-install "$MODEL_PRE_INSTALL_SCRIPT" \
@@ -130,6 +126,7 @@ for MODEL_FILE in "$DOWNLOAD_DIR"/*.argosmodel; do
         
     rm "$MODEL_PRE_INSTALL_SCRIPT" 2>/dev/null
     rm -rf "$LANG_STAGING_DIR" # Limpieza del staging de este modelo
+    # El temporal de FPM se limpia al final (Paso 5)
 
 done
 
@@ -143,3 +140,4 @@ echo "=========================================================="
 echo "✅ CREACIÓN DE PAQUETES DE MODELOS FINALIZADA."
 echo "Los paquetes se encuentran en: ${REPO_PATH}"
 echo "=========================================================="
+

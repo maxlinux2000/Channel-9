@@ -7,14 +7,25 @@ PACKAGE_NAME="whisper-cpp-cli"
 INSTALL_PREFIX="/opt/whisper-cpp"
 BUILD_DIR="whisper.cpp_build"
 MODEL=small  # modelo linguistico
+FPM_ARCH="$(dpkg --print-architecture)"
+
+# --- Variables de Arquitectura y Repositorio ---
+ARCH=$(dpkg --print-architecture)
+# Ruta donde se guardará el paquete .deb final
+REPO_PATH="${HOME}/public_html/ch9/debian/pool/${ARCH}" 
+# Nombre del archivo DEB, siguiendo la convención: nombre_version-modelo_arch.deb
+DEB_FILENAME="${PACKAGE_NAME}_${WHISPER_VERSION}-${MODEL}_${ARCH}.deb"
+
+# DIRECTORIO TEMPORAL DE FPM (para robustez)
+FPM_TMP_BASE="fpm_whisper_temp"
+export ABSOLUTE_FPM_TMP_PATH="$(pwd)/${FPM_TMP_BASE}" 
+export TMPDIR="$ABSOLUTE_FPM_TMP_PATH"
+export TEMP="$ABSOLUTE_FPM_TMP_PATH"
+export FPM_TEMP="$ABSOLUTE_FPM_TMP_PATH"
 
 # --- 1. Control de Dependencias ---
 
 echo "1. Verificando dependencias necesarias (git, cmake, make, ruby, fpm)..."
-# Instalar herramientas básicas de compilación si faltan
-#command -v git >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: git no está instalado. Ejecute 'sudo apt install git'."; exit 1; }
-#command -v cmake >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: cmake no está instalado. Ejecute 'sudo apt install cmake'."; exit 1; }
-#command -v make >/dev/null 2>&1 || { echo >&2 "🚨 ALERTA: make no está instalado. Ejecute 'sudo apt install build-essential'."; exit 1; }
 
 command -v git >/dev/null 2>&1 || {
     echo "⚙️ Instalando git..."
@@ -29,47 +40,33 @@ command -v make >/dev/null 2>&1 || {
     sudo apt install make -y
 }
 
-
-
-# Instalar Ruby si no está presente (necesario para fpm)
-command -v ruby >/dev/null 2>&1
-if [ $? -ne 0 ]; then
+# Instalar Ruby y fpm si no están presentes
+command -v ruby >/dev/null 2>&1 || {
     echo "⚙️ Instalando Ruby y Ruby-Dev (necesario para fpm)..."
-    # El usuario debe ejecutar esto con sudo
-#    echo "Por favor, ejecute: sudo apt install ruby ruby-dev"
     sudo apt install ruby ruby-dev -y
-#    exit 1
-fi
-
-# Instalar fpm si no está presente
-command -v fpm >/dev/null 2>&1
-if [ $? -ne 0 ]; then
+}
+command -v fpm >/dev/null 2>&1 || {
     echo "⚙️ Instalando fpm (Fast Package Manager)..."
-    # El usuario debe ejecutar esto
-#    echo "Por favor, ejecute: sudo gem install fpm"
-#    exit 1
     sudo gem install fpm
-fi
+}
 
 echo "Dependencias verificadas. Continuando con la compilación..."
 
 # --- 2. Preparar Entorno ---
-# Eliminamos el directorio de build anterior y lo recreamos
-rm -rf "$BUILD_DIR"
-mkdir "$BUILD_DIR"
+rm -rf "$BUILD_DIR" "$FPM_TMP_BASE"
+mkdir -p "$BUILD_DIR" "$FPM_TMP_BASE"
 cd "$BUILD_DIR" || exit 1
 
 # --- 3. Descargar y Compilar whisper.cpp ---
 echo "2. Descargando y compilando whisper.cpp..."
 git clone https://github.com/ggerganov/whisper.cpp.git .
 make clean
-# Compilamos, el binario 'main' se crea en la raíz de la compilación.
+# Compilamos, el binario 'whisper-cli' se crea en build/bin/
 make || { echo "Error en la compilación de whisper.cpp."; exit 1; }
 
 # --- 4. Descargar el Modelo  ---
 echo "3. Descargando el modelo ggml-$MODEL.bin..."
-# Este comando descarga la versión multilingual.
-bash ./models/download-ggml-model.sh $MODEL || { echo "Error al descargar el modelo."; exit 1; }
+bash ./models/download-ggml-model.sh "$MODEL" || { echo "Error al descargar el modelo."; exit 1; }
 
 # --- 5. Preparar la Estructura de Instalación Temporal ---
 echo "4. Creando la estructura temporal en staging..."
@@ -78,48 +75,49 @@ rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR/$INSTALL_PREFIX/bin"
 mkdir -p "$STAGING_DIR/$INSTALL_PREFIX/models"
 
-# Mover el ejecutable y el modelo al staging
-# 🚨 CORRECCIÓN 1: El ejecutable 'main' está en la raíz del directorio de compilación.
-cp ./build/bin/whisper-cli "$STAGING_DIR/$INSTALL_PREFIX/bin/main"
+# 5.1. Mover el ejecutable principal al staging
+EXECUTABLE_NAME="whisper-cli"
+cp "./build/bin/${EXECUTABLE_NAME}" "$STAGING_DIR/$INSTALL_PREFIX/bin/main" # Renombrado a 'main'
+chmod +x "$STAGING_DIR/$INSTALL_PREFIX/bin/main"
 
-# 🚨 CORRECCIÓN FINAL 1: Copiar la librería compartida (libwhisper.so.1) desde la ruta correcta.
-# 🚨 CORRECCIÓN FINAL 2: Copiar todas la librerías compartida.
-cp ./build/src/libwhisper.so.1 "$STAGING_DIR/$INSTALL_PREFIX/bin/"
+# 5.2. Mover librerías compartidas (libwhisper y libggml)
+echo "INFO: Copiando librerías compartidas .so a la carpeta bin..."
+# Se asume que libwhisper.so y libggml.so están en build/src o build/ggml/src
+find ./build -name "*.so*" -exec cp {} "$STAGING_DIR/$INSTALL_PREFIX/bin/" \;
 
-# 📢 NUEVA CORRECCIÓN: Copiar la dependencia faltante libggml.so.0 desde la ruta de compilación
-# Esta librería causó el error "cannot open shared object file"
-#cp ./build/ggml/src/libggml.so.0 "$STAGING_DIR/$INSTALL_PREFIX/bin/"
+# 5.3. Mover el modelo al staging
+cp "./models/ggml-${MODEL}.bin" "$STAGING_DIR/$INSTALL_PREFIX/models/"
 
-# 🚨 CORRECCIÓN FINAL 2: Copiar todas la librerías compartida.
-cp ./build/ggml/src/*libggml* "$STAGING_DIR/$INSTALL_PREFIX/bin/"
+# --- 6. Crear el Paquete .deb con fpm y moverlo al Repositorio ---
+echo "5. Creando el paquete .deb (${DEB_FILENAME})..."
+echo "INFO: El paquete se guardará en: ${REPO_PATH}"
 
-# 🚨 CORRECCIÓN 2: El modelo descargado se llama ggml-$MODEL.bin.
-cp ./models/ggml-$MODEL.bin "$STAGING_DIR/$INSTALL_PREFIX/models/"
-
-# --- 6. Crear el Paquete .deb con fpm ---
-echo "5. Creando el paquete .deb..."
 cd "$STAGING_DIR" || exit 1
+mkdir -p "${REPO_PATH}" # Crear la estructura de directorios del repositorio (si no existe)
 
-# 🚨 CORRECCIÓN 3: Se añade --force para sobrescribir el paquete anterior.
+# CRÍTICO: Usamos las variables de arquitectura y repositorio en -p
 fpm -s dir -t deb --force \
     -n "$PACKAGE_NAME" \
     -v "$WHISPER_VERSION" \
-    -a "$(dpkg --print-architecture)" \
-    --description "Lightweight C++ port of OpenAI's Whisper for transcription." \
+    -a "$ARCH" \
+    --description "Lightweight C++ port of OpenAI's Whisper for transcription (Modelo: ${MODEL})." \
+    --depends "libopenblas-base" \
+    --depends "libgomp1" \
     --url "https://github.com/ggerganov/whisper.cpp" \
-    --category "utils" \
-    --maintainer "Tu Nombre <tu@email.com>" \
-    -p "../${PACKAGE_NAME}-${WHISPER_VERSION}_$MODEL.deb" \
+    --category "sound" \
+    --maintainer "Channel9 Project <ch9@mi.atalaya>" \
+    -p "${REPO_PATH}/${DEB_FILENAME}" \
     --prefix / \
-    .
+    . || { echo "Error al crear el paquete .DEB."; exit 1; }
 
 # --- 7. Limpieza ---
 cd ..
-rm -rf "$BUILD_DIR" "$STAGING_DIR"
+rm -rf "$BUILD_DIR" 
+rm -rf "$STAGING_DIR"
+rm -rf "$FPM_TMP_BASE"
 
 echo "=========================================================="
-echo "✅ ¡PAQUETE .DEB CREADO CON ÉXITO!"
-echo "Para instalar: sudo dpkg -i ${PACKAGE_NAME}-${WHISPER_VERSION}.deb"
+echo "✅ ¡PAQUETE WHISPER .DEB CREADO CON ÉXITO!"
+echo "Paquete: ${REPO_PATH}/${DEB_FILENAME}"
 echo "El ejecutable se instala en: ${INSTALL_PREFIX}/bin/main"
 echo "=========================================================="
-

@@ -10,6 +10,21 @@ PACKAGE_NAME_BASE="piper-tts"
 BUILD_DIR="piper_build_staging" # Directorio temporal de trabajo
 PIPER_REPO="https://github.com/rhasspy/piper"
 
+# --- Variables de Repositorio (NUEVAS) ---
+# Ruta donde se guardará el paquete .deb final
+REPO_PATH="${HOME}/public_html/ch9/debian/pool/${ARCH}" 
+# Nombre del archivo DEB, siguiendo la convención: nombre_version_arch.deb
+DEB_FILENAME="${PACKAGE_NAME_BASE}_${PIPER_VERSION}_${ARCH}.deb"
+
+# DIRECTORIO TEMPORAL DE FPM (para robustez)
+FPM_TMP_PATH="fpm_piper_temp_dir" 
+# La ruta absoluta que EXPORTAREMOS
+export ABSOLUTE_FPM_TMP_PATH="$(pwd)/$FPM_TMP_PATH" 
+# CRÍTICO: Forzar el uso de la ruta de disco duro en lugar de /tmp (tmpfs)
+export TMPDIR="$ABSOLUTE_FPM_TMP_PATH"
+export TEMP="$ABSOLUTE_FPM_TMP_PATH"
+export FPM_TEMP="$ABSOLUTE_FPM_TMP_PATH"
+
 # --- Scripts Temporales para fpm ---
 BASE_PRE_INSTALL_SCRIPT="base-pre-install.sh"
 
@@ -26,9 +41,10 @@ command -v fpm >/dev/null 2>&1 || {
     sudo gem install fpm
 }
 
-# --- 2. Preparar Entorno Temporal (Base) ---
-rm -rf "$BUILD_DIR"
+# --- 2. Preparar Entorno Temporal (Base) (MODIFICADO) ---
+rm -rf "$BUILD_DIR" "$FPM_TMP_PATH"
 mkdir -p "$BUILD_DIR"
+mkdir -p "$FPM_TMP_PATH" # Creamos el directorio temporal para fpm
 cd "$BUILD_DIR" || exit 1
 
 # Creamos la estructura de directorios de destino DENTRO del BUILD_DIR
@@ -57,9 +73,15 @@ exec $INSTALL_PREFIX/venv/bin/python3 -m piper "\$@"
 EOT
 chmod +x "$PIPER_WRAPPER"
 
-# --- 4. Crear el Paquete .deb BASE (piper-tts.deb) ---
-echo "3. Creando el paquete .deb BASE (piper-tts.deb)..."
+# --- 4. Crear el Paquete .deb BASE (piper-tts.deb) (MODIFICADO) ---
+echo "3. Creando el paquete .deb BASE (${DEB_FILENAME})..."
+echo "INFO: FPM usará el directorio temporal: $ABSOLUTE_FPM_TMP_PATH"
+echo "INFO: El paquete se guardará en: ${REPO_PATH}/${DEB_FILENAME}"
+
 cd .. # Volvemos al directorio raíz para FPM
+
+# Creamos la carpeta del repositorio
+mkdir -p "${REPO_PATH}"
 
 rm -f ${PACKAGE_NAME_BASE}-${PIPER_VERSION}.deb
 
@@ -67,14 +89,14 @@ fpm -s dir -t deb --force \
     --before-install "$BASE_PRE_INSTALL_SCRIPT" \
     -n "$PACKAGE_NAME_BASE" \
     -v "$PIPER_VERSION" \
-    -a "$(dpkg --print-architecture)" \
+    -a "$ARCH" \
     --description "Piper TTS: Motor ligero de Texto-a-Voz (Binario Base)." \
     --depends "libgomp1" \
     --depends "libespeak-ng1" \
     --url "$PIPER_REPO" \
     --category "utils" \
-    --maintainer "Max <max@example.com>" \
-    -p "${PACKAGE_NAME_BASE}-${PIPER_VERSION}.deb" \
+    --maintainer "Channel9 Project <ch9@mi.atalaya>" \
+    -p "${REPO_PATH}/${DEB_FILENAME}" \
     -C "$BUILD_DIR" \
     --exclude '**.pyc' \
     --exclude '**__pycache__**' \
@@ -84,13 +106,15 @@ fpm -s dir -t deb --force \
     --exclude '**/man/**' \
     --exclude '**/tests/**' \
     --exclude '**/test/**' \
-    opt usr || { echo "Error al crear el paquete BASE."; rm "$BASE_PRE_INSTALL_SCRIPT" 2>/dev/null; exit 1; } 
+    opt usr || { echo "Error al crear el paquete BASE."; rm "$BASE_PRE_INSTALL_SCRIPT" 2>/dev/null; rm -rf "$FPM_TMP_PATH"; exit 1; } 
     
-# --- 5. Limpieza Final ---
+# --- 5. Limpieza Final (MODIFICADO) ---
 rm -rf "$BUILD_DIR"
+rm -rf "$FPM_TMP_PATH"
 rm "$BASE_PRE_INSTALL_SCRIPT" 2>/dev/null
 
 echo "=========================================================="
 echo "✅ ¡PAQUETE BASE PIPER .DEB CREADO CON ÉXITO!"
-echo "Paquete: ${PACKAGE_NAME_BASE}-${PIPER_VERSION}.deb"
+echo "Paquete: ${REPO_PATH}/${DEB_FILENAME}"
 echo "=========================================================="
+
