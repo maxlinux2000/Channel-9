@@ -94,18 +94,31 @@ imap IN A $STATION_IP
 
 sudo mv /tmp/DB "$DB_FILE"
 
-# 3.3. Arreglo de permisos y Reiniciar BIND9
+# 3.3. Arreglo de permisos y Verificación
 sudo chown root:bind "$DB_FILE"
 sudo chmod 644 "$DB_FILE"
 
 # Verificamos la sintaxis del archivo de zona
 echo "INFO: Verificando sintaxis del archivo de zona..."
-
-# La limpieza de caracteres invisibles ya está asegurada por el método echo > /tmp/DB
 sudo named-checkzone "$DOMAIN" "$DB_FILE" || { echo "🚨 ERROR CRÍTICO: Fallo en la sintaxis del archivo de zona. Deteniendo."; exit 1; }
 
+# --- 3.4. Configurar Reenvío (Forwarding) de BIND9 (NUEVA SECCIÓN) ---
+echo "--- 3.4. Configurando BIND9 como servidor de reenvío (Forwarder) ---"
+OPTIONS_FILE="/etc/bind/named.conf.options"
+FORWARDERS_BLOCK='forwarders { 1.1.1.1; 8.8.8.8; };'
+
+# CRÍTICO: Limpiar cualquier configuración de forwarders previa.
+sudo sed -i '/forwarders {/,/};/d' "$OPTIONS_FILE"
+
+# Insertar el bloque de forwarders dentro del bloque 'options { ... }'
+sudo awk -i inplace '/options {/ {print; print "    '"$FORWARDERS_BLOCK"'"} !/options {/ {print}' "$OPTIONS_FILE"
+
+echo "INFO: Añadido reenvío DNS (1.1.1.1 y 8.8.8.8) a named.conf.options."
+
+
+# 3.5. Reiniciar BIND9 (Movido aquí para cargar la nueva configuración de forwarders)
 sudo systemctl restart bind9 || { echo "🚨 ERROR: Fallo al reiniciar named.service (BIND9). Revise los logs (journalctl -xeu named.service). Deteniendo."; exit 1; }
-echo "INFO: DNS configurado para $DOMAIN. A records apuntan a $STATION_IP."
+echo "INFO: DNS configurado para $DOMAIN. A records apuntan a $STATION_IP. Ahora reenvía peticiones externas."
 
 
 # --- 4. Configuración del Servidor de Correo (Postfix y Dovecot) ---
@@ -139,10 +152,10 @@ for user in "${MAIL_USERS[@]}"; do
     echo "$user:$MAIL_PASS" | sudo chpasswd
 done
 
-# 4.4. Dovecot: Configurar Maildir y protocolo IMAP/POP3 (CORREGIDO)
+# 4.4. Dovecot: Configurar Maildir y protocolo IMAP/POP3
 echo "INFO: Configurando Maildir para Dovecot..."
 DOVECOT_CONF="/etc/dovecot/conf.d/10-mail.conf"
-# CRÍTICO: Uso de '|' como delimitador de sed para evitar el error de sintaxis con '/'.
+# Uso de '|' como delimitador de sed para evitar el error de sintaxis con '/'.
 sudo sed -i 's|^#mail_location = maildir:~/Maildir|mail_location = maildir:~/Maildir|' "$DOVECOT_CONF"
 
 # 4.5. Dovecot: Configuración de escucha
@@ -157,6 +170,6 @@ echo "✅ CONFIGURACIÓN DE INFRAESTRUCTURA LOCAL COMPLETADA."
 echo "   - Interfaz Detectada: $NET_INTERFACE"
 echo "   - IP de la Estación: $STATION_IP (Usando IP asignada por la red externa)."
 echo "   - Dominio Local: $DOMAIN"
-echo "   - CRÍTICO: Los clientes DEBEN usar la IP de la estación ($STATION_IP) como servidor DNS para resolver $DOMAIN."
+echo "   - CRÍTICO: Los clientes DEBEN usar la IP de la estación ($STATION_IP) como servidor DNS para resolver $DOMAIN y el resto de dominios."
 echo "=========================================================="
 
