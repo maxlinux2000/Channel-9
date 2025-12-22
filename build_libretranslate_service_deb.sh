@@ -4,7 +4,8 @@
 # --- Variables de Configuración Global ---
 LT_VERSION="1.4.0" 
 PACKAGE_NAME="libretranslate-service"
-PACKAGE_BASE="libretranslate"
+# CORRECCIÓN: Usar el nombre del paquete base real
+PACKAGE_BASE="libretranslate-base" 
 ARCH="all" # ¡CRÍTICO! Este paquete es independiente de la arquitectura
 BUILD_DIR="libretranslate_service_staging"
 

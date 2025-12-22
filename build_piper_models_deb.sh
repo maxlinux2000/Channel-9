@@ -53,7 +53,7 @@ echo "--- 2. Procesando el índice para obtener URLs y códigos de modelos ---"
 
 # CRÍTICO: Nueva lógica de jq: 
 MODEL_LIST=$(jq -r '.[] | select(.links[0] | endswith(".argosmodel")) | "\(.links[0]) \(.code)"' "$MODEL_INDEX_FILE")
-
+#'
 if [ -z "$MODEL_LIST" ]; then
     echo "Error: No se encontraron modelos válidos (.argosmodel) en el índice JSON. Comprueba la estructura del archivo."
     exit 1
@@ -84,7 +84,7 @@ for MODEL_FILE in "$DOWNLOAD_DIR"/*.argosmodel; do
     
     # Extraemos el par de idiomas (ej: sq_en) del nombre del archivo: translate-sq_en-1_9.argosmodel
     LANG_PAIR=$(echo "$FILENAME" | sed -E 's/translate-([a-z]{2}_[a-z]{2}).*/\1/') 
-    
+#'    
     if [ -z "$LANG_PAIR" ]; then
         echo "Advertencia: No se pudo extraer el par de idiomas (LANG_PAIR) del archivo $FILENAME. Saltando."
         continue

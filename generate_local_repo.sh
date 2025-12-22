@@ -14,11 +14,11 @@ echo "--- 1. Verificando dependencias necesarias (dpkg-dev, gzip)... ---"
 
 command -v dpkg-scanpackages >/dev/null 2>&1 || {
     echo "⚙️ Instalando dpkg-dev (necesario para dpkg-scanpackages)..."
-##    sudo apt update && sudo apt install dpkg-dev -y
+    sudo apt update && sudo apt install dpkg-dev -y
 }
 command -v gzip >/dev/null 2>&1 || {
     echo "⚙️ Instalando gzip..."
-##    sudo apt install gzip -y
+    sudo apt install gzip -y
 }
 
 # --- 2. Detección de IP y Configuración de URL (CORREGIDO) ---
@@ -60,9 +60,14 @@ mkdir -p "$REPO_ROOT/dists/$DISTRIBUTION"
 # --- 4. Generación de los archivos Packages para cada arquitectura ---
 echo "--- 4. Escaneando paquetes y generando archivos Packages ---"
 
+# CRÍTICO: Entrar en el directorio raíz del repositorio antes de dpkg-scanpackages
+# Esto asegura que las rutas en el campo 'Filename' de Packages.gz sean RELATIVAS
+pushd "$REPO_ROOT" > /dev/null
+
 for ARCH in "${ARCHITECTURES[@]}"; do
-    POOL_DIR="${REPO_ROOT}/pool/${ARCH}"
-    INDEX_DIR="${REPO_ROOT}/dists/${DISTRIBUTION}/${COMPONENT}/binary-${ARCH}"
+    # Las rutas usadas aquí son relativas a $REPO_ROOT (el nuevo CWD)
+    POOL_DIR="pool/${ARCH}"
+    INDEX_DIR="dists/${DISTRIBUTION}/${COMPONENT}/binary-${ARCH}"
     
     if [ ! -d "$POOL_DIR" ] || [ -z "$(ls -A "$POOL_DIR" 2>/dev/null)" ]; then
         echo "Advertencia: La carpeta de paquetes para ${ARCH} no existe o está vacía: ${POOL_DIR}. Saltando."
@@ -72,15 +77,18 @@ for ARCH in "${ARCHITECTURES[@]}"; do
     echo "-> Procesando arquitectura: ${ARCH}"
     mkdir -p "$INDEX_DIR"
     
-    # 4.1. Generar el archivo Packages
-##    dpkg-scanpackages --arch "$ARCH" "$POOL_DIR" /dev/null > "${INDEX_DIR}/Packages"
+    # 4.1. Generar el archivo Packages (AHORA DESCOMENTADO y usando rutas relativas)
+    dpkg-scanpackages --arch "$ARCH" "$POOL_DIR" /dev/null > "${INDEX_DIR}/Packages"
     
-    # 4.2. Generar el archivo Packages.gz
+    # 4.2. Generar el archivo Packages.gz (AHORA DESCOMENTADO y usando rutas relativas)
     echo "-> Comprimiendo Packages.gz..."
-##    gzip -9c "${INDEX_DIR}/Packages" > "${INDEX_DIR}/Packages.gz"
+    gzip -9c "${INDEX_DIR}/Packages" > "${INDEX_DIR}/Packages.gz"
     
     echo "✅ Índices Packages para ${ARCH} generados en ${INDEX_DIR}"
 done
+
+# CRÍTICO: Regresar al directorio original
+popd > /dev/null
 
 # --- 5. Generación del archivo Release ---
 echo "--- 5. Generando el archivo Release principal ---"
@@ -214,5 +222,4 @@ echo "4. Ejecuta:"
 echo "   sudo apt update"
 echo "   sudo apt install libretranslate-base libretranslate-service libretranslate-model-* whisper-cpp-cli piper-tts"
 echo ""
-
 

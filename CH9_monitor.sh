@@ -60,24 +60,13 @@ DEBUG=0
 MSMTP_RC="$HOME/.msmtprc"
 MSMTP_LOG="$HOME/.log/msmtp.log"
 
-
-# VARIABLE DE LOG
+# 4. VARIABLE DE LOG
 LOG_FILE="$HOME/ch9_monitor.log"
 touch "$LOG_FILE"
 
-# 4. INICIALIZACIÓN DEL ENTORNO
-# Se eliminó la inicialización del watchdog.
-
 # 5. PREPARACIÓN DEL ENTORNO DE GRABACIÓN
-#mkdir -p $RAMDISK/$USER/vox
-#rm $RAMDISK/$USER/audio*.wav 2>/dev/null
-
-
-#rm $RAMDISK/$USER/vox/vox.wav 
-#if [ ! -f $RAMDISK/$USER/vox/vox.wav ]; then
-#    sox -V -r $FREQ -n -b 16 -c 1 $RAMDISK/$USER/vox/vox.wav synth 0.5 sin 440 vol -10dB
-#fi
-#cp /usr/local/share/loro/sounds/messagereceived.wav $RAMDISK/$USER/vox/ 2>/dev/null
+mkdir -p $RAMDISK/$USER/vox
+rm $RAMDISK/$USER/audio*.wav 2>/dev/null
 
 
 # 6. BUCLE PRINCIPAL DE MONITOREO (VOX Loop)

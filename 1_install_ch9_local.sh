@@ -1,11 +1,21 @@
 #!/bin/bash
 # ==============================================================================
 # SCRIPT: install_ch9_local.sh
-# Versión: 2.2 - Instalación inteligente de Channel-9 con Infraestructura Web/Core
+# Versión: 2.3 - Instalación inteligente de Channel-9 con Infraestructura Web/Core (FIX Lighttpd)
 # Descripción: Comprueba y compila/instala los paquetes DEB. Luego, configura
 #              el repositorio local, la infraestructura web (Lighttpd/Userdir)
 #              y la infraestructura de red/correo (ch9_infra_setup.sh).
 # ==============================================================================
+
+
+# --- 9.1. controlamos si las interfaces de red usan nombres tradicionales (canonical) o no y los forzamos ---
+echo "--- 9.1 comprobamos los nombres de las interfaces de red ---"
+if [ -f "force_canonical_netnames.sh" ]; then
+    ./force_canonical_netnames.sh || { echo "🚨 Error al comprobar los nombres de las interfaces."; }
+else
+    echo "🚨 Error: force_canonical_netnames.sh no encontrado."
+fi
+
 
 # --- Variables de Configuración ---
 REPO_ROOT="${HOME}/public_html/ch9/debian"
@@ -23,7 +33,6 @@ PACKAGES_TO_CHECK=(
 
 # Lista de paquetes que se instalarán al final (solo los paquetes base y el servicio LT)
 CORE_PACKAGES="libretranslate-base libretranslate-service whisper-cpp-cli piper-tts"
-
 
 # --- Funciones de Utilidad ---
 
@@ -46,6 +55,9 @@ deb_exists() {
 # --- 1. Control de Dependencias Generales y Preparación ---
 echo "--- 1. Instalando dependencias básicas, FPM e infraestructura web ---"
 
+# eliminamos el repositorio local porqué va a ser regenerado y añadido después:
+sudo rm /etc/apt/sources.list.d/channel9.list
+
 # Instalación de todas las dependencias (Bind9 se instala en ch9_infra_setup.sh)
 sudo apt update
 sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt msmtp lighttpd
@@ -61,12 +73,14 @@ command -v fpm >/dev/null 2>&1 || {
     sudo gem install fpm
 }
 
-# --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir) ---
+# --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir y Dirlisting) ---
 echo "--- 1.1. Configurando Lighttpd para servir el repositorio local ---"
 
-# Habilitar el módulo Userdir
-echo "⚙️ Habilitando mod_userdir para servir \$HOME/public_html..."
-sudo lighty-enable-mod userdir 2>/dev/null
+# Habilitar los módulos necesarios: userdir (para /~usuario/) y dirlisting (para indexar carpetas)
+echo "⚙️ Habilitando mod_userdir y mod_dirlisting para servir \$HOME/public_html..."
+# **CORRECCIÓN CRÍTICA:** Usamos lighttpd-enable-mod y añadimos dirlisting para evitar el error 403.
+sudo lighttpd-enable-mod userdir 2>/dev/null
+sudo lighttpd-enable-mod dirlisting 2>/dev/null
 
 # Establecer los permisos necesarios para que lighttpd acceda a $HOME/public_html
 echo "⚙️ Estableciendo permisos de lectura para el servidor web..."
@@ -79,9 +93,10 @@ sudo chmod o+rx "$HOME/public_html"
 mkdir -p "$REPO_ROOT" # Asegurar que la ruta base existe
 sudo chmod -R o+rX "$HOME/public_html/ch9" 2>/dev/null
 
-# Reiniciar Lighttpd para aplicar la configuración de userdir
+# Reiniciar Lighttpd para aplicar la nueva configuración de módulos
+# Usamos restart, aunque 'force-reload' también es válido.
 sudo systemctl restart lighttpd
-echo "INFO: Lighttpd instalado y mod_userdir activado."
+echo "INFO: Lighttpd instalado y módulos userdir/dirlisting activados."
 
 # --- 2. Lógica de Construcción Condicional ---
 
@@ -147,14 +162,23 @@ echo "--- 5. Configurando APT para usar el repositorio local (Userdir) ---"
 
 # Usamos el formato Userdir de Lighttpd: http://127.0.0.1/~<usuario>/
 USER_NAME=$(whoami)
-APT_SOURCE_LINE="deb http://127.0.0.1/~${USER_NAME}/ch9/debian stable main"
+# CRÍTICO: Añadir [trusted=yes] para evitar el error de firma GPG en repositorios locales.
+REPO_WEB_PATH="deb [trusted=yes] http://127.0.0.1/~${USER_NAME}/ch9/debian stable main"
 
 # 1. Eliminar cualquier fuente anterior del proyecto Channel9
 sudo rm -f /etc/apt/sources.list.d/channel9.list
 
 # 2. Añadir la fuente del repositorio
 echo "Añadiendo línea de repositorio: ${APT_SOURCE_LINE}"
-sudo sh -c "echo \"${APT_SOURCE_LINE}\" > /etc/apt/sources.list.d/channel9.list"
+
+
+# NUEVAS VARIABLES CRÍTICAS PARA public_html
+#LocalHost="127.0.0.1"
+#LINUX_USER="$(whoami)"
+#REPO_WEB_PATH="~${LINUX_USER}/ch9/debian stable main" # Incluye la parte ~usuario/
+
+sudo sh -c "echo \"${REPO_WEB_PATH}\" > /etc/apt/sources.list.d/channel9.list"
+
 
 # 3. Actualizar el índice de paquetes
 sudo apt update || { echo "🚨 Error al actualizar APT. Compruebe la configuración de Lighttpd y la línea del repositorio."; exit 1; }
@@ -272,14 +296,6 @@ else
     echo "🚨 Error: ch9_infra_setup.sh no encontrado. No se configurará BIND9/Dominio/Cuentas de Correo."
 fi
 
-# --- 9.1. controlamos si las interfaces de red usan nombres tradicionales (canonical) o no y los forzamos ---
-echo "--- 9.1 comprobamos los nombres de las interfaces de red ---"
-if [ -f "force_canonical_netnames.sh" ]; then
-    ./force_canonical_netnames.sh || { echo "🚨 Error al comprobar los nombres de las interfaces."; }
-else
-    echo "🚨 Error: force_canonical_netnames.sh no encontrado."
-fi
-
 
 # --- 10. FINALIZACIÓN ---
 echo "--- 10. Finalización ---"
@@ -292,4 +308,3 @@ echo "✅ INSTALACIÓN BASE COMPLETA DEL PROYECTO CHANNEL 9."
 echo "======================================================================="
 echo "Tenga en cuenta que el bypass del portal cautivo (Android) NO se ha activado."
 echo "🚀 Ejecute ./ch9_ap_bypass.sh AHORA para configurar el bypass (Lighttpd/BIND9)."
-

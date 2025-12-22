@@ -101,7 +101,7 @@ fpm -s dir -t deb --force \
     -v "$WHISPER_VERSION" \
     -a "$ARCH" \
     --description "Lightweight C++ port of OpenAI's Whisper for transcription (Modelo: ${MODEL})." \
-    --depends "libopenblas-base" \
+    --depends "libopenblas0" \
     --depends "libgomp1" \
     --url "https://github.com/ggerganov/whisper.cpp" \
     --category "sound" \

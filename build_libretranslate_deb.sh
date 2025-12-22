@@ -113,7 +113,7 @@ FPM_PRESERVE_PKGDIR=1 fpm -s dir -t deb --force \
     -a "${ARCH}" \
     --description "LibreTranslate: Servidor de Traducción Automática (Binario Base con Gunicorn)." \
     --depends "python3-venv" \
-    --depends "libopenblas-base" \
+    --depends "libopenblas0" \
     --depends "libgomp1" \
     --url "$LT_REPO" \
     --category "utils" \
