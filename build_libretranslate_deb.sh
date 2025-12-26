@@ -56,14 +56,32 @@ echo "--- 3. Instalando LibreTranslate BASE y Gunicorn en Venv... ---"
 python3 -m venv "${FINAL_VENV_PATH}" 
 "${VENV_PIP}" install libretranslate=="$LT_VERSION" gunicorn || { echo "Error al instalar libretranslate."; exit 1; }
 
-# --- 4. Corregir Symlinks y Limpiar (Anti-tar-failed y Reducción de Tamaño) ---
-echo "--- 4. Corrigiendo symlinks y limpiando Venv para reducir tamaño... ---"
+# ====================================================================================
+# 🚨 NUEVO PASO CRÍTICO: CORRECCIÓN DEL SHEBANG 
+# Esto evita el error "no se ha encontrado el fichero requerido" al ejecutar gunicorn.
+# ====================================================================================
+echo "--- 4. Corrigiendo Shebang de gunicorn para la ruta de instalación final ---"
+GUNICORN_SCRIPT="${FINAL_VENV_PATH}/bin/gunicorn"
 
-# 4.1. Eliminar symlinks rotos (Causa principal de tar failed (exit code 2) si no es espacio)
+if [ -f "$GUNICORN_SCRIPT" ]; then
+    # Reemplaza la primera línea por la ruta absoluta de Python en el destino final.
+    # $INSTALL_PREFIX es /opt/libretranslate
+    sed -i '1s|^.*$|#!'"$INSTALL_PREFIX"'/venv/bin/python3|' "$GUNICORN_SCRIPT"
+    echo "✅ Shebang de gunicorn corregido."
+else
+    echo "🚨 ADVERTENCIA: Script de gunicorn no encontrado en staging. El servicio podría fallar al arrancar."
+fi
+# ====================================================================================
+
+# --- 5. Corregir Symlinks y Limpiar (Anti-tar-failed y Reducción de Tamaño) ---
+# (Paso original 4, ahora 5)
+echo "--- 5. Corrigiendo symlinks y limpiando Venv para reducir tamaño... ---"
+
+# 5.1. Eliminar symlinks rotos (Causa principal de tar failed (exit code 2) si no es espacio)
 find "${FINAL_VENV_PATH}" -type l -xtype l -delete 2>/dev/null
 echo "INFO: Enlaces simbólicos rotos eliminados."
 
-# 4.2. Limpiar cache de pip, scripts de activación y otros archivos grandes/innecesarios
+# 5.2. Limpiar cache de pip, scripts de activación y otros archivos grandes/innecesarios
 find "${FINAL_VENV_PATH}" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
 rm -rf "${FINAL_VENV_PATH}/lib/python3*/site-packages/*.dist-info" 2>/dev/null
 rm -rf "${FINAL_VENV_PATH}/lib/python3*/site-packages/*.egg-info" 2>/dev/null
@@ -73,8 +91,9 @@ rm -f "${FINAL_VENV_PATH}/bin/activate" "${FINAL_VENV_PATH}/bin/activate.csh" "$
 echo "INFO: Archivos innecesarios y cache eliminados."
 
 
-# --- 5. Crear script wrapper ---
-echo "--- 5. Creando script wrapper para Gunicorn... ---"
+# --- 6. Crear script wrapper ---
+# (Paso original 5, ahora 6)
+echo "--- 6. Creando script wrapper para Gunicorn... ---"
 WRAPPER_SCRIPT="./usr/local/bin/libretranslate"
 cat <<EOT > "${WRAPPER_SCRIPT}"
 #!/bin/bash
@@ -83,8 +102,9 @@ exec ${INSTALL_PREFIX}/venv/bin/gunicorn --bind 0.0.0.0:5000 'libretranslate:app
 EOT
 chmod +x "${WRAPPER_SCRIPT}"
 
-# --- 6. Preparación Final del Staging y Chequeo de Permisos ---
-echo "--- 6. Verificaciones de Staging antes de FPM ---"
+# --- 7. Preparación Final del Staging y Chequeo de Permisos ---
+# (Paso original 6, ahora 7)
+echo "--- 7. Verificaciones de Staging antes de FPM ---"
 
 # Asegurar permisos correctos en directorios clave (recursivo)
 echo "INFO: Aplicando permisos 755 a directorios clave..."
@@ -95,8 +115,9 @@ sudo chmod -R 755 ./usr/
 find . -type f -name ".*" -delete 2>/dev/null
 find . -type d -name ".*" -exec rm -rf {} + 2>/dev/null
 
-# --- 7. Creando el Paquete .deb BASE y moviéndolo al Repositorio ---
-echo "--- 7. Creando el paquete .deb BASE (${DEB_FILENAME}) ---"
+# --- 8. Creando el Paquete .deb BASE y moviéndolo al Repositorio ---
+# (Paso original 7, ahora 8)
+echo "--- 8. Creando el paquete .deb BASE (${DEB_FILENAME}) ---"
 echo "INFO: FPM usará el directorio temporal: ${ABSOLUTE_FPM_TMP_PATH}"
 echo "INFO: El paquete se guardará en: ${REPO_PATH}"
 
@@ -131,8 +152,9 @@ FPM_PRESERVE_PKGDIR=1 fpm -s dir -t deb --force \
     --exclude '**/__pycache__' \
     opt usr || { echo "Error al crear el paquete BASE."; rm "${BASE_PRE_INSTALL_SCRIPT}" 2>/dev/null; rm -rf "$FPM_TMP_PATH"; exit 1; } 
     
-# --- 8. Limpieza Final ---
-echo "--- 8. Limpieza y Finalización ---"
+# --- 9. Limpieza Final ---
+# (Paso original 8, ahora 9)
+echo "--- 9. Limpieza y Finalización ---"
 rm -rf "$BUILD_DIR"
 rm -rf "$FPM_TMP_PATH"
 rm "${BASE_PRE_INSTALL_SCRIPT}" 2>/dev/null
@@ -141,4 +163,3 @@ echo "=========================================================="
 echo "✅ ¡PAQUETE BASE LIBRETRANSLATE .DEB CREADO CON ÉXITO!"
 echo "Paquete: ${REPO_PATH}/${DEB_FILENAME}"
 echo "=========================================================="
-

@@ -1,10 +1,10 @@
 #!/bin/bash
 # ==============================================================================
 # SCRIPT: install_ch9_local.sh
-# Versión: 2.3 - Instalación inteligente de Channel-9 con Infraestructura Web/Core (FIX Lighttpd)
-# Descripción: Comprueba y compila/instala los paquetes DEB. Luego, configura
-#              el repositorio local, la infraestructura web (Lighttpd/Userdir)
-#              y la infraestructura de red/correo (ch9_infra_setup.sh).
+# Versión: 2.4 - Instalación CORE de Channel-9 (Desacoplada de Infraestructura Web)
+# Descripción: Construye e instala paquetes DEB. Asume que el repositorio local
+#              es servido por un proyecto Mirror externo. Omite la configuración
+#              de red/correo si detecta ISPConfig.
 # ==============================================================================
 
 
@@ -53,14 +53,14 @@ deb_exists() {
 }
 
 # --- 1. Control de Dependencias Generales y Preparación ---
-echo "--- 1. Instalando dependencias básicas, FPM e infraestructura web ---"
+echo "--- 1. Instalando dependencias básicas y FPM ---"
 
 # eliminamos el repositorio local porqué va a ser regenerado y añadido después:
 sudo rm /etc/apt/sources.list.d/channel9.list
 
-# Instalación de todas las dependencias (Bind9 se instala en ch9_infra_setup.sh)
+# Instalación de todas las dependencias. Se elimina 'lighttpd'.
 sudo apt update
-sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt msmtp lighttpd
+sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt msmtp
 
 command -v dpkg-scanpackages >/dev/null 2>&1 || {
     echo "⚙️ Instalando dpkg-dev (necesario para la gestión de repositorios)..."
@@ -73,30 +73,11 @@ command -v fpm >/dev/null 2>&1 || {
     sudo gem install fpm
 }
 
-# --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir y Dirlisting) ---
-echo "--- 1.1. Configurando Lighttpd para servir el repositorio local ---"
+# ⚠️ --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir y Dirlisting) ELIMINADO ---
+# Se asume que el servidor web es gestionado por el proyecto Mirror.
+echo "--- 1.1. Configuración de Infraestructura Web OMITIDA. ---"
+echo "INFO: Lighttpd y configuración de Userdir no se instalan en este script."
 
-# Habilitar los módulos necesarios: userdir (para /~usuario/) y dirlisting (para indexar carpetas)
-echo "⚙️ Habilitando mod_userdir y mod_dirlisting para servir \$HOME/public_html..."
-# **CORRECCIÓN CRÍTICA:** Usamos lighttpd-enable-mod y añadimos dirlisting para evitar el error 403.
-sudo lighttpd-enable-mod userdir 2>/dev/null
-sudo lighttpd-enable-mod dirlisting 2>/dev/null
-
-# Establecer los permisos necesarios para que lighttpd acceda a $HOME/public_html
-echo "⚙️ Estableciendo permisos de lectura para el servidor web..."
-# 1. Permisos de ejecución/acceso para $HOME
-sudo chmod o+x "$HOME"
-# 2. Permisos de acceso al directorio public_html
-mkdir -p "$HOME/public_html"
-sudo chmod o+rx "$HOME/public_html"
-# 3. Permisos de lectura/ejecución para el repositorio (archivos y directorios)
-mkdir -p "$REPO_ROOT" # Asegurar que la ruta base existe
-sudo chmod -R o+rX "$HOME/public_html/ch9" 2>/dev/null
-
-# Reiniciar Lighttpd para aplicar la nueva configuración de módulos
-# Usamos restart, aunque 'force-reload' también es válido.
-sudo systemctl restart lighttpd
-echo "INFO: Lighttpd instalado y módulos userdir/dirlisting activados."
 
 # --- 2. Lógica de Construcción Condicional ---
 
@@ -158,9 +139,9 @@ else
     exit 1
 fi
 
-echo "--- 5. Configurando APT para usar el repositorio local (Userdir) ---"
+echo "--- 5. Configurando APT para usar el repositorio local (Loopback) ---"
 
-# Usamos el formato Userdir de Lighttpd: http://127.0.0.1/~<usuario>/
+# Usamos el formato Userdir: http://127.0.0.1/~<usuario>/ (asumiendo que el Mirror lo sirve)
 USER_NAME=$(whoami)
 # CRÍTICO: Añadir [trusted=yes] para evitar el error de firma GPG en repositorios locales.
 REPO_WEB_PATH="deb [trusted=yes] http://127.0.0.1/~${USER_NAME}/ch9/debian stable main"
@@ -169,19 +150,13 @@ REPO_WEB_PATH="deb [trusted=yes] http://127.0.0.1/~${USER_NAME}/ch9/debian stabl
 sudo rm -f /etc/apt/sources.list.d/channel9.list
 
 # 2. Añadir la fuente del repositorio
-echo "Añadiendo línea de repositorio: ${APT_SOURCE_LINE}"
-
-
-# NUEVAS VARIABLES CRÍTICAS PARA public_html
-#LocalHost="127.0.0.1"
-#LINUX_USER="$(whoami)"
-#REPO_WEB_PATH="~${LINUX_USER}/ch9/debian stable main" # Incluye la parte ~usuario/
+echo "Añadiendo línea de repositorio: ${REPO_WEB_PATH}"
 
 sudo sh -c "echo \"${REPO_WEB_PATH}\" > /etc/apt/sources.list.d/channel9.list"
 
 
 # 3. Actualizar el índice de paquetes
-sudo apt update || { echo "🚨 Error al actualizar APT. Compruebe la configuración de Lighttpd y la línea del repositorio."; exit 1; }
+sudo apt update || { echo "🚨 Error al actualizar APT. Compruebe que el proyecto Mirror esté sirviendo la carpeta $HOME/public_html."; exit 1; }
 
 # --- 6. Instalación de Paquetes ---
 echo "--- 6. Instalando paquetes base y modelos mediante APT ---"
@@ -209,7 +184,7 @@ sudo apt install -y ${INSTALL_LIST} || {
     exit 1 
 }
 
-# --- 7. Generación de Páginas Web ---
+# --- 7. Generación de Páginas Web (Paso Mantenido) ---
 echo "--- 7. Generando las páginas Home y de Repositorio ---"
 if [ -f "create_homepage.sh" ]; then
     ./create_homepage.sh
@@ -220,8 +195,6 @@ fi
 # --- 8. Instalación Local de Scripts y Launchers ---
 echo "--- 8. Instalación local de Channel-9 scripts y lanzadores ---"
 
-# [Se mantiene la lógica de instalación de scripts, iconos y .desktop aquí]
-# ...
 BIN_DIR="$HOME/.local/bin"
 ICONS_DIR="$HOME/.local/share/icons/hicolor/256x256"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
@@ -288,12 +261,19 @@ Categories=Settings;Utility;
 StartupNotify=true
 EOF
 
-# --- 9. Configuración de Infraestructura de Red (BIND9 y Correo) (AÑADIDO) ---
+# --- 9. Configuración de Infraestructura de Red (BIND9 y Correo) (MODIFICADO) ---
 echo "--- 9. Configurando Infraestructura de Red y Correo (ch9_infra_setup.sh) ---"
-if [ -f "ch9_infra_setup.sh" ]; then
-    ./ch9_infra_setup.sh || { echo "🚨 Error al configurar la infraestructura de red/correo. Continuación no garantizada."; }
+
+# CRÍTICO: Comprobación de existencia de ISPConfig
+if [ -d "/usr/local/ispconfig" ]; then
+    echo "⚠️ Omisión: Detectado ISPConfig (/usr/local/ispconfig)."
+    echo "   El paso 9 (configuración de BIND9/Correo) se omite para evitar conflictos."
 else
-    echo "🚨 Error: ch9_infra_setup.sh no encontrado. No se configurará BIND9/Dominio/Cuentas de Correo."
+    if [ -f "ch9_infra_setup.sh" ]; then
+        ./ch9_infra_setup.sh || { echo "🚨 Error al configurar la infraestructura de red/correo. Continuación no garantizada."; }
+    else
+        echo "🚨 Error: ch9_infra_setup.sh no encontrado. No se configurará BIND9/Dominio/Cuentas de Correo."
+    fi
 fi
 
 
@@ -304,7 +284,7 @@ update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null
 gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null
 
 echo "======================================================================="
-echo "✅ INSTALACIÓN BASE COMPLETA DEL PROYECTO CHANNEL 9."
+echo "✅ INSTALACIÓN CORE COMPLETA DEL PROYECTO CHANNEL 9."
 echo "======================================================================="
-echo "Tenga en cuenta que el bypass del portal cautivo (Android) NO se ha activado."
-echo "🚀 Ejecute ./ch9_ap_bypass.sh AHORA para configurar el bypass (Lighttpd/BIND9)."
+echo "⚠️ REQUISITO: Asegúrese de que su proyecto Mirror/Web Server esté sirviendo:"
+echo "   http://127.0.0.1/~${USER_NAME}/ch9/debian"

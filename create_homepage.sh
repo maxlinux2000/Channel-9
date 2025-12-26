@@ -3,7 +3,7 @@
 
 # --- Variables de Configuración ---
 PUBLIC_HTML_DIR="${HOME}/public_html"
-INDEX_FILE="${PUBLIC_HTML_DIR}/index.html"
+INDEX_FILE="${PUBLIC_HTML_DIR}/ch9/index.html"
 REPO_PATH="/~$(whoami)/ch9/debian" # Ruta relativa para el repositorio local (ya existe el index.html en /ch9/debian)
 LIBRETRANSLATE_PORT="5000" # Puerto por defecto para LibreTranslate (servido por Gunicorn)
 
