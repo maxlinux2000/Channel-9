@@ -1,55 +1,10 @@
 #!/bin/bash
 # ==============================================================================
-# SCRIPT: CH9_monitor.sh - MODO 3: Monitor CB (Alerta por Transcripción)
+# SCRIPT: CH9_monitor.sh - MODO 3: Monitor CB (SOLO GRABACIÓN)
 # ==============================================================================
-
-# ------------------------------------------------------------------------------
-# SETUP DE WHISPER C++ (Necesario para la transcripción)
-# ------------------------------------------------------------------------------
-MODEL="small"
-export WHISPER_EXECUTABLE="/opt/whisper-cpp/bin/main"
-export WHISPER_MODEL_PATH="/opt/whisper-cpp/models/ggml-$MODEL.bin"
-# Ya no se usa ASR_LANGUAGE, se usará WHISPER_LANG del archivo de configuración.
-export LD_LIBRARY_PATH="/opt/whisper-cpp/bin/:$LD_LIBRARY_PATH"
-# ==============================================================================
-# 1. Función de Transcripción (INFO a stderr para limpiar $TRANSCRIPT)
-# ==============================================================================
-whisper_transcribe() {
-    local audio_file="$1"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    
-    local transcript_filename="$RAMDISK/$USER/transcript_${timestamp}.txt"
-    
-    if [ -z "$audio_file" ] || [ ! -f "$audio_file" ]; then
-        echo "ERROR: La función whisper_transcribe requiere una ruta de archivo válida." >&2
-        return 1
-    fi
-
-    echo "INFO: Transcribiendo archivo: $audio_file (Idioma: $WHISPER_LANG)" >&2 
-
-    # Ejecuta Whisper C++ y filtra la salida para obtener solo el texto.
-    # Se añade -l "$WHISPER_LANG" para especificar el idioma de transcripción.
-    TRANSCRIPT_RESULT=$(
-        "$WHISPER_EXECUTABLE" -m "$WHISPER_MODEL_PATH" "$audio_file" -l "$WHISPER_LANG" -np -nt |\
-         tail -n 1 | sed 's|^[[:space:]]*||')
-    
-    # Guarda la transcripción en el archivo TXT (localmente en RAMDISK)
-    echo "Transcripción: $TRANSCRIPT_RESULT" > "$transcript_filename"
-    echo "INFO: Transcripción guardada en: $transcript_filename" >&2 
-
-    # Devuelve SOLO el texto transcrito (imprime a stdout)
-    echo "$TRANSCRIPT_RESULT"
-}
-# ------------------------------------------------------------------------------
 
 # 2. CARGA DE CONFIGURACIÓN
 source $HOME/.CH9-config
-WRAPPER_SCRIPT="$HOME/.local/bin/mutt-msmtp.sh"
-
-# 📢 LIMPIEZA CRÍTICA DE VARIABLES DE CONFIGURACIÓN
-# FIX FINAL: Convertir KEYWORDS a minúsculas, reemplazar "|" por espacios, y limpiar
-KEYWORDS=$(echo "$KEYWORDS" | tr -d '\r' | sed 's/\xc2\xa0/ /g' | sed 's/|/ /g' | sed -E 's/ +/ /g; s/^ *| *$//' | tr '[:upper:]' '[:lower:]')
-
 
 # 3. DEFINICIÓN DE VARIABLES INICIALES
 ENABLE=1
@@ -57,16 +12,30 @@ RAMDISK=/dev/shm
 USER=$(whoami)
 DEBUG=0
 
-MSMTP_RC="$HOME/.msmtprc"
-MSMTP_LOG="$HOME/.log/msmtp.log"
-
 # 4. VARIABLE DE LOG
 LOG_FILE="$HOME/ch9_monitor.log"
 touch "$LOG_FILE"
 
 # 5. PREPARACIÓN DEL ENTORNO DE GRABACIÓN
+# CRÍTICO: El subdirectorio 'vox' se usa para almacenar el audio temporalmente.
 mkdir -p $RAMDISK/$USER/vox
 rm $RAMDISK/$USER/audio*.wav 2>/dev/null
+
+# ------------------------------------------------------------------------------
+# 🚨 LANZAMIENTO DEL PROCESO ASÍNCRONO DE WHISPER
+# ------------------------------------------------------------------------------
+WHISPER_SCRIPT="$HOME/.local/bin/CH9_whisper.sh"
+echo "--- Iniciando Monitor de Transcripción (CH9_whisper.sh) en segundo plano ---"
+
+if [ -f "$WHISPER_SCRIPT" ]; then
+    # Lanzamos el script de Whisper en segundo plano, pasándole nuestro PID ($$)
+    "$WHISPER_SCRIPT" "$$" & 
+    WHISPER_PID=$!
+    echo "INFO: CH9_whisper.sh lanzado con PID: $WHISPER_PID. Seguirá activo hasta terminar el trabajo."
+else
+    echo "🚨 ERROR: $WHISPER_SCRIPT no encontrado. El audio NO se transcribirá."
+fi
+# ------------------------------------------------------------------------------
 
 
 # 6. BUCLE PRINCIPAL DE MONITOREO (VOX Loop)
@@ -74,15 +43,11 @@ rm $RAMDISK/$USER/audio*.wav 2>/dev/null
 DURATION=$(echo "($MinMexDuration * 1000000)/1" | bc) #"
 while true; do
     
-    # 6.1. ESTADO DEL SISTEMA (Watchdog eliminado)
-    # SystemStop y TotTimeDone eliminados. ENABLE siempre será 1 si el script está corriendo.
-
-    # 6.2. MUESTRA EL ESTADO Y LOS ÚLTIMOS MENSAJES
+    # 6.1. ESTADO DEL SISTEMA
     if [ "$DEBUG" = 0 ]; then clear; fi
     
-    echo "monitoring (Modo Monitor CB/Alerta)..."
-    rm *.wav 2> /dev/null
-
+    echo "monitoring (Modo Monitor CB/SOLO GRABACIÓN)... PID de Monitor: $$"
+    
     echo "
 ########################################################
 # MODO MONITOR CB - ENABLE=$ENABLE
@@ -92,185 +57,59 @@ while true; do
     tail -n 5 "$LOG_FILE"
     echo "--------------------------------------"
 
-    # 6.3. COMANDO CRÍTICO DE SQUELCH (TRIPLE PIPE)
+    # 6.2. COMANDO CRÍTICO DE SQUELCH (TRIPLE PIPE)
     AUDIODRIVER=$AUDIODRIVER AUDIODEV=$AUDIODEV rec -V0 -r $FREQ -e signed-integer -b 16 -c 1 --endian little    -p  | sox -p -p silence 0 1 0:$TIME 10% | sox -p -r $FREQ -e signed-integer -b 16 -c 1 --endian little $RAMDISK/$USER/audio.wav compand 0.3,1 6:-70,-60,-20 -5 -90 0.2  silence 0 1 0:02 10% : newfile
 
-    # 6.4. PROCESAMIENTO POST-GRABACIÓN
+    # 6.3. PROCESAMIENTO POST-GRABACIÓN
     ls $RAMDISK/$USER/*.wav > $RAMDISK/$USER/list.log
     du $RAMDISK/$USER/*.wav >> $RAMDISK/$USER/size.log
 
     for audio in $(cat $RAMDISK/$USER/list.log); do
-        size=$(cat $audio | wc -l)
+        size=$(cat "$audio" | wc -l) # Citamos $audio
         
-        if [ $size == "0" ]; then
+        if [ "$size" == "0" ]; then # Citamos $size
             echo "$audio file empty"
-            rm $audio
+            rm "$audio"
         else
-            size2=$(ffprobe -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $audio 2>/dev/null | tr -d '.')
+            size2=$(ffprobe -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$audio" 2>/dev/null | tr -d '.')
             
-            if [ $size2 -lt "$DURATION" ]; then
+            if [ "$size2" -lt "$DURATION" ]; then
                 echo "$audio file too short"
-                rm -f $audio
+                rm -f "$audio"
             else
-                # 6.5. LÓGICA ESPECÍFICA DEL MODO MONITOR CB
-                if [ $ENABLE = 1 ]; then
+                # 6.4. LÓGICA DE GRABACIÓN Y ALMACENAMIENTO
+                if [ "$ENABLE" = 1 ]; then
+                    
+                    # PASO CRÍTICO: Renombrar el archivo de audio con un sello de tiempo y mover.
+                    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                    NEW_AUDIO="$RAMDISK/$USER/vox/${TIMESTAMP}.wav"
+                    
+                    echo "INFO: Audio grabado ($audio). Renombrando a $NEW_AUDIO para Transcripción Asíncrona..."
+                    
+                    # Movimiento/Renombre al directorio 'vox' donde CH9_whisper lo espera
+                    mv "$audio" "$NEW_AUDIO" || { echo "ERROR: No se pudo mover/renombrar el archivo de audio. Se queda en $audio."; continue; }
+
                     MexDuration=$(echo "( $size2 / 1000000 )*1" | bc) #"
                     
-                    # Se eliminó la acumulación de tiempo en watchdog.log
-
-                    # 1. Transcribir el audio (Captura el texto crudo)
-                    TRANSCRIPT_RAW=$(whisper_transcribe "$audio")
+                    LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - AUDIO GRABADO ($MexDuration s) - $NEW_AUDIO"
+                    echo "$LOG_ENTRY" >> "$LOG_FILE"
                     
-                    # 📢 FILTRO DE LIMPIEZA DE TRANSCRIPCIÓN (VERSION ROBUSTA)
-                    TRANSCRIPT=$(echo "$TRANSCRIPT_RAW" | \
-                        sed 's/\xc2\xa0/ /g' | \
-                        sed -E 's/[^[:alnum:] ]/ /g' | \
-                        sed -E 's/ +/ /g; s/^ *| *$//' | tr '[:upper:]' '[:lower:]')
-
-                    # 📢 Añadir espacios de relleno para la búsqueda nativa de Bash (Word Boundary Check)
-                    PADDED_TRANSCRIPT=" $TRANSCRIPT "
-
-                    # Inicializar STATUS a 1 (No Alerta)
-                    STATUS=1 
-                    DETECTED_WORD=""
-
-                    echo "DEBUG TRANSCRIPT (Padded): [$PADDED_TRANSCRIPT]"
-                    echo "DEBUG KEYWORDS (Minúsculas y separadas por espacio): [$KEYWORDS]"
-
-                    # 2. BÚSQUEDA ROBUSTA DE PALABRAS CLAVE (Iteración por palabra y BASH Nativo)
-                    if [ ! -z "$KEYWORDS" ]; then
-
-                        # Dividir $KEYWORDS por espacios para iterar
-                        for word in $KEYWORDS; do
-
-                            # 📢 CREAMOS EL PATRÓN A BUSCAR con relleno de espacios
-                            PADDED_WORD=" $word "
-
-                            # Usamos la coincidencia de patrón nativa de Bash (altamente fiable)
-                            if [[ "$PADDED_TRANSCRIPT" == *"$PADDED_WORD"* ]]; then
-                                STATUS=0 # Palabra clave encontrada
-                                DETECTED_WORD="$word"
-                                break    # Salir del bucle tan pronto como se encuentre una
-                            fi
-                        done
-                    fi
-
+                    echo "INFO: Audio listo para CH9_whisper en $NEW_AUDIO."
                     
-                    # 3. USO DEL STATUS EXPLICITO
-                    if [ "$STATUS" = 0 ]; then
-                        
-                        echo "🚨 ALERTA DETECTADA: Palabra clave encontrada: [$DETECTED_WORD]" 
-                        
-                        # REGISTRO DE ALERTA: Texto limpio + Etiqueta
-                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - ALERTA!! - $TRANSCRIPT"
-                        echo "$LOG_ENTRY" >> "$LOG_FILE"
-                        
-                        # ----------------------------------------------------------------
-                        # PASO 4.1: CONVERSIÓN A OGG PARA COMPATIBILIDAD CON DELTACHAT
-                        # ----------------------------------------------------------------
-                        # Creamos la ruta para el archivo OGG en el mismo directorio (RAMDISK)
-                        OGG_AUDIO="${audio%.wav}.ogg"
-                        echo "INFO: Convirtiendo $audio a formato OGG ($OGG_AUDIO) para adjuntar..." >&2
-                        
-                        # Usamos ffmpeg para la conversión (codec libvorbis, calidad 5).
-                        ffmpeg -i "$audio" -c:a libvorbis -qscale:a 5 "$OGG_AUDIO" -y > /dev/null 2>&1
-                        
-                        if [ $? -ne 0 ] || [ ! -f "$OGG_AUDIO" ]; then
-                            echo "ERROR: Falló la conversión a OGG. Adjuntando WAV original." >&2
-                            FILE_TO_ATTACH="$audio"
-                            ATTACHMENT_INFO="WAV original"
-                        else
-                            FILE_TO_ATTACH="$OGG_AUDIO"
-                            ATTACHMENT_INFO="OGG para Deltachat"
-                            echo "INFO: Conversión a OGG exitosa. Adjuntando $FILE_TO_ATTACH." >&2
-                        fi
-                        
-                        # 4.2. Enviar Correo de Alerta
-                        EMAIL_SUBJECT="[Channel-9] 🚨 ALERTA DE EMERGENCIA POR RADIO 🚨"
-                        EMAIL_BODY="
-==============================================
-¡ALERTA DE EMERGENCIA DETECTADA!
-==============================================
-Modo: Monitor CB (Alerta)
-Palabra clave detectada: $DETECTED_WORD
-Lista de palabras clave: $(echo $KEYWORDS | tr ' ' '|')
-Fecha y Hora: $(date '+%Y-%m-%d %H:%M:%S')
-Duración: $MexDuration segundos
-
---- Transcripción ---
-$TRANSCRIPT
---- Fin de Transcripción ---
-
-Se adjunta el archivo de audio ($ATTACHMENT_INFO) para su revisión.
-"
-
-# ==========================================================
-                        # SOLUCIÓN ROBUSTA: Envío de correo con configuración temporal mutt (-F)
-                        # Esto rompe el bucle de sub-shell al forzar la ruta del MTA.
-                        # ==========================================================
-                        TEMP_MUTTRC="$RAMDISK/$USER/temp_muttrc_ch9_$$"
-                        
-                        echo "INFO: Conversión a OGG exitosa. Adjuntando $FILE_TO_ATTACH."
-
-                        # 1. Crear el archivo de configuración temporal
-                        mkdir -p "$(dirname "$TEMP_MUTTRC")"
-                        
-                        # Forzar a mutt a usar el binario msmtp con su configuración específica.
-                        echo "set sendmail=\"/usr/bin/msmtp -C $MSMTP_RC --account=local\"" > "$TEMP_MUTTRC"
-                        echo "set use_envelope_from=yes" >> "$TEMP_MUTTRC" 
-                        
-                        # 2. Enviar el correo usando mutt con la configuración temporal (-F)
-                        echo "$EMAIL_BODY" | /usr/bin/mutt -F "$TEMP_MUTTRC" -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
-                        
-                        # Capturar el resultado del envío
-                        if [ $? -eq 0 ]; then
-                            echo "✅ Correo de alerta de emergencia enviado exitosamente a $LOCAL_EMAIL_TO."
-                        else
-                            echo "❌ ERROR al enviar correo de alerta a $LOCAL_EMAIL_TO. Revise el log de msmtp: $MSMTP_LOG"
-                        fi
-
-                        # 3. Limpieza del archivo de configuración temporal
-                        rm -f "$TEMP_MUTTRC"
-
-                        # ==========================================================
-
-                        # 4.3. Limpieza de archivos de audio
-                        rm -f "$audio" "$OGG_AUDIO" 2>/dev/null
-
-
-                        # USANDO el wrapper a mutt PARA ADJUNTAR EL ARCHIVO CONVERTIDO (OGG o WAV)
-                        # echo "$EMAIL_BODY" | mutt -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
-                        # echo "$EMAIL_BODY - $WRAPPER_SCRIPT  $EMAIL_SUBJECT  -a $FILE_TO_ATTACH  -- $LOCAL_EMAIL_TO"
-
-#                        echo "$EMAIL_BODY" | "$WRAPPER_SCRIPT" -s "$EMAIL_SUBJECT" -a "$FILE_TO_ATTACH" -- "$LOCAL_EMAIL_TO"
-#                        echo "✅ Correo de alerta de emergencia enviado a $LOCAL_EMAIL_TO."
-
-                        # cp "$audio" . # Mantenemos esta línea para debug, copiando el WAV original antes de borrar
-
-                        # 4.3. Limpieza de archivos de audio
-                        rm -f "$audio" "$OGG_AUDIO" 2>/dev/null
-
-                    else
-                        # REGISTRO DE MENSAJE NORMAL: Texto limpio sin etiqueta
-                        LOG_ENTRY="$(date '+%Y-%m-%d %H:%M:%S') - $TRANSCRIPT"
-                        echo "$LOG_ENTRY" >> "$LOG_FILE"
-                        
-                        echo "INFO: Modo Monitor CB: No se detectaron palabras clave. Omitiendo alerta."
-                        # Limpiar el archivo WAV en caso de no alerta
-                        rm -f "$audio" 2>/dev/null 
-                    fi
+                else
+                    # Limpiar el archivo WAV si el monitoreo está deshabilitado
+                    rm -f "$audio" 2>/dev/null 
                 fi
             fi
         fi
-        # Se eliminó la limpieza final al final del 'for' loop
     done
     
-    # 6.6. LIMPIEZA Y PAUSA DEL BUCLE
+    # 6.5. LIMPIEZA Y PAUSA DEL BUCLE
     sleep 0.3
     :> $RAMDISK/$USER/size.log
     
-    # 6.7. RESET DIARIO (Eliminado)
-    # Se eliminó la lógica de reset diario del watchdog.
 done
-exit 0
+
+# Al salir (p. ej. Ctrl+C), simplemente se sale. El proceso hijo CH9_whisper.sh
+# debe gestionar su propia finalización.
 

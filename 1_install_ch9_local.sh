@@ -1,10 +1,9 @@
 #!/bin/bash
 # ==============================================================================
 # SCRIPT: install_ch9_local.sh
-# Versión: 2.4 - Instalación CORE de Channel-9 (Desacoplada de Infraestructura Web)
-# Descripción: Construye e instala paquetes DEB. Asume que el repositorio local
-#              es servido por un proyecto Mirror externo. Omite la configuración
-#              de red/correo si detecta ISPConfig.
+# Versión: 2.5 - Instalación CORE de Channel-9 (Lighttpd/BIND9 condicional)
+# Descripción: Construye e instala paquetes DEB. Instala Lighttpd y BIND9/Correo
+#              solo si no se detecta ISPConfig.
 # ==============================================================================
 
 
@@ -58,9 +57,9 @@ echo "--- 1. Instalando dependencias básicas y FPM ---"
 # eliminamos el repositorio local porqué va a ser regenerado y añadido después:
 sudo rm /etc/apt/sources.list.d/channel9.list
 
-# Instalación de todas las dependencias. Se elimina 'lighttpd'.
+# Instalación de todas las dependencias. AÑADIDO 'lighttpd' de nuevo.
 sudo apt update
-sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt msmtp
+sudo apt install -y sox ffmpeg zenity mailutils multimon-ng net-tools git cmake build-essential ruby ruby-dev python3 python3-venv wget yad mutt msmtp lighttpd
 
 command -v dpkg-scanpackages >/dev/null 2>&1 || {
     echo "⚙️ Instalando dpkg-dev (necesario para la gestión de repositorios)..."
@@ -73,10 +72,31 @@ command -v fpm >/dev/null 2>&1 || {
     sudo gem install fpm
 }
 
-# ⚠️ --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir y Dirlisting) ELIMINADO ---
-# Se asume que el servidor web es gestionado por el proyecto Mirror.
-echo "--- 1.1. Configuración de Infraestructura Web OMITIDA. ---"
-echo "INFO: Lighttpd y configuración de Userdir no se instalan en este script."
+# --- 1.1. Configuración del Servidor Web (Lighttpd/Userdir y Dirlisting) ---
+echo "--- 1.1. Configuración de Infraestructura Web (Lighttpd/Userdir) ---"
+
+# CRÍTICO: Comprobación de existencia de ISPConfig
+if [ -d "/usr/local/ispconfig" ]; then
+    echo "⚠️ Omisión: Detectado ISPConfig. Lighttpd no se configura para evitar conflictos."
+else
+    echo "🚀 Configurando Lighttpd para servir el repositorio local..."
+
+    # 1. Habilitar mod_userdir (para ~user/public_html)
+    sudo lighty-enable-mod userdir 2>/dev/null
+
+    # 2. Habilitar mod_dirlisting para que se vean los paquetes .deb
+    sudo lighty-enable-mod dirlisting 2>/dev/null
+
+    # 3. Crear el directorio public_html si no existe
+    mkdir -p "$HOME/public_html"
+
+    # 4. Ajustar permisos
+    chmod 755 "$HOME/public_html"
+
+    # 5. Reiniciar Lighttpd para aplicar cambios
+    sudo systemctl restart lighttpd || { echo "🚨 Error al reiniciar Lighttpd. Continuación no garantizada."; }
+    echo "INFO: Lighttpd configurado con Userdir y Dirlisting."
+fi
 
 
 # --- 2. Lógica de Construcción Condicional ---
@@ -184,7 +204,7 @@ sudo apt install -y ${INSTALL_LIST} || {
     exit 1 
 }
 
-# --- 7. Generación de Páginas Web (Paso Mantenido) ---
+# --- 7. Generación de Páginas Web (Paso Mantenido, NO Condicional) ---
 echo "--- 7. Generando las páginas Home y de Repositorio ---"
 if [ -f "create_homepage.sh" ]; then
     ./create_homepage.sh
@@ -269,7 +289,9 @@ if [ -d "/usr/local/ispconfig" ]; then
     echo "⚠️ Omisión: Detectado ISPConfig (/usr/local/ispconfig)."
     echo "   El paso 9 (configuración de BIND9/Correo) se omite para evitar conflictos."
 else
+    # Si ISPConfig NO está instalado, ejecutamos la configuración de infraestructura.
     if [ -f "ch9_infra_setup.sh" ]; then
+        echo "🚀 Ejecutando ch9_infra_setup.sh..."
         ./ch9_infra_setup.sh || { echo "🚨 Error al configurar la infraestructura de red/correo. Continuación no garantizada."; }
     else
         echo "🚨 Error: ch9_infra_setup.sh no encontrado. No se configurará BIND9/Dominio/Cuentas de Correo."
@@ -288,3 +310,4 @@ echo "✅ INSTALACIÓN CORE COMPLETA DEL PROYECTO CHANNEL 9."
 echo "======================================================================="
 echo "⚠️ REQUISITO: Asegúrese de que su proyecto Mirror/Web Server esté sirviendo:"
 echo "   http://127.0.0.1/~${USER_NAME}/ch9/debian"
+
