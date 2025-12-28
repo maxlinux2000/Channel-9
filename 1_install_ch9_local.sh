@@ -226,6 +226,7 @@ SCRIPTS_TO_INSTALL=(
     "CH9_loro.sh"
     "CH9_monitor.sh"
     "CH9_secretaria.sh"
+    "CH9_whisper.sh"
 )
 
 # Lista de iconos
