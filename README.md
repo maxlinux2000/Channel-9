@@ -8,6 +8,16 @@ El sistema utiliza procesamiento de audio digital (VOX/Squelch) y modelos avanza
 
 **Esta es una versión previa de desarrollo.** El modo **Monitor CB (Emergencia)** está funcional y listo para pruebas. Los modos Secretaría Telefónica y Loro/Parrot están en fase de integración.
 
+
+
+## 🚀 QUICK-START
+
+para hacer las cosas rápidas he añadido un instalador .run que con un click descarga, instala, y compila todo.
+En pocos minutos o incluso en media hora según la elocidad de tu CPU e internet, Channel 9 estará listo para usar.
+
+Lanza Channel9_Installer.run después haberle dado permiso de ejecución. Puedes hacerlo con el ratón desde una ventana o desde una terminal.
+
+
 ## ✨ Características Principales
 
 | Modo Operativo | Descripción | Estado Actual |
