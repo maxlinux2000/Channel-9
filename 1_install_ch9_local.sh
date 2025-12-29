@@ -300,15 +300,57 @@ else
 fi
 
 
-# --- 10. FINALIZACIÓN ---
-echo "--- 10. Finalización ---"
+
+# --- 10. SERVICIO DE WHISPER (ASÍNCRONO) ---
+echo "--- 10. Configurando y Lanzando Servicio Asíncrono de Whisper (systemd user) ---"
+
+# 1. Crear el directorio de configuración de systemd para el usuario si no existe
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_USER_DIR"
+WHISPER_SERVICE_FILE="$SYSTEMD_USER_DIR/ch9-whisper.service"
+
+# 2. Escribir el archivo de la unidad de servicio
+cat <<EOF > "$WHISPER_SERVICE_FILE"
+[Unit]
+Description=Channel 9 Whisper Transcriber Service
+Documentation=https://ch9.mi.atalaya/docs
+After=network-online.target graphical.target
+
+[Service]
+Type=simple
+Restart=always
+# Usamos %h como alias de $HOME para robustez en systemd
+ExecStart=%h/.local/bin/CH9_whisper.sh
+# Comando para detener el servicio de forma limpia
+ExecStop=/usr/bin/kill -s SIGINT \$MAINPID
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+EOF
+
+# 3. Recargar la configuración de systemd del usuario
+echo "INFO: Recargando demonio systemd del usuario..."
+systemctl --user daemon-reload || echo "⚠️ Advertencia: No se pudo recargar systemd daemon (puede que no haya iniciado la sesión gráfica/systemd user)."
+
+# 4. Activar el servicio para que inicie automáticamente
+echo "INFO: Activando servicio 'ch9-whisper.service' para el inicio de sesión..."
+systemctl --user enable ch9-whisper.service || echo "⚠️ Advertencia: No se pudo habilitar el servicio."
+
+# 5. Iniciar el servicio inmediatamente
+echo "INFO: Iniciando servicio 'ch9-whisper.service'..."
+systemctl --user start ch9-whisper.service || echo "🚨 Error: Fallo al iniciar el servicio 'ch9-whisper.service'. Compruebe el log con 'journalctl --user -u ch9-whisper.service'"
+
+
+# --- 11. FINALIZACIÓN (Antiguo 10. FINALIZACIÓN) ---
+echo "--- 11. Finalización ---"
 echo "Actualizando la base de datos de lanzadores y la caché de iconos..."
 update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null
 gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null
 
 echo "======================================================================="
-echo "✅ INSTALACIÓN CORE COMPLETA DEL PROYECTO CHANNEL 9."
+echo "✅ INSTALACIÓN BASE COMPLETA DEL PROYECTO CHANNEL-9."
+echo "   El servicio de transcripción asíncrona (ch9-whisper.service) ha sido lanzado."
 echo "======================================================================="
-echo "⚠️ REQUISITO: Asegúrese de que su proyecto Mirror/Web Server esté sirviendo:"
-echo "   http://127.0.0.1/~${USER_NAME}/ch9/debian"
 

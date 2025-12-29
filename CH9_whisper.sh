@@ -1,10 +1,9 @@
 #!/bin/bash
 # ==============================================================================
-# SCRIPT: CH9_whisper.sh - PROCESO ASÍNCRONO DE TRANSCRIPCIÓN Y ALERTA
+# SCRIPT: CH9_whisper.sh - PROCESO ASÍNCRONO DE TRANSCRIPCIÓN Y ALERTA (SERVICIO SYSTEMD)
 # ==============================================================================
 
-# El PID del proceso padre (CH9_monitor.sh) se pasa como argumento
-PARENT_PID="$1"
+# ELIMINAMOS: PARENT_PID ya no es necesario.
 
 # ------------------------------------------------------------------------------
 # SETUP DE WHISPER C++ (Necesario para la transcripción)
@@ -23,30 +22,14 @@ KEYWORDS=$(echo "$KEYWORDS" | tr -d '\r' | sed 's/\xc2\xa0/ /g' | sed 's/|/ /g' 
 
 RAMDISK=/dev/shm
 USER=$(whoami)
-# Directorio donde CH9_monitor guarda los archivos .wav
 AUDIO_DIR="$RAMDISK/$USER/vox"
-LOG_FILE="$HOME/ch9_monitor.log" # Usamos el mismo log para las alertas
+LOG_FILE="$HOME/ch9_monitor.log" 
 MSMTP_RC="$HOME/.msmtprc"
 MSMTP_LOG="$HOME/.log/msmtp.log"
 SLEEP_TIME=10 # Comprobación cada 10 segundos
 
 # ------------------------------------------------------------------------------
-# 1.1 Función para verificar si el proceso padre sigue activo
-# Retorna 0 si está activo, 1 si no está activo.
-# ------------------------------------------------------------------------------
-check_parent() {
-    if [ -z "$PARENT_PID" ]; then
-        # Si no se recibió PID, asumimos que siempre debe estar activo (o es un error)
-        # Para ser seguro, si no hay PID, salimos del bucle de autogestión.
-        return 1 
-    fi
-    # kill -0 solo comprueba la existencia del PID sin enviar señales
-    kill -0 "$PARENT_PID" 2>/dev/null
-}
-
-# ------------------------------------------------------------------------------
-# 2. Función de Transcripción
-# (Mantenida sin cambios funcionales respecto al último envío)
+# 2. Función de Transcripción (Sin cambios)
 # ------------------------------------------------------------------------------
 whisper_transcribe() {
     local audio_file="$1"
@@ -74,28 +57,16 @@ whisper_transcribe() {
 
 
 # 3. BUCLE PRINCIPAL DE PROCESAMIENTO
-echo "INFO: CH9_whisper.sh iniciado. Monitoreando al padre PID: $PARENT_PID"
+echo "INFO: CH9_whisper.sh iniciado como servicio persistente. Monitoreando cola en $AUDIO_DIR"
 
-# Bucle principal: Sigue activo mientras el padre viva O haya archivos que procesar.
+# El bucle es 'while true' y solo sale si el servicio systemd lo detiene.
 while true; do
     
     # 3.1. Búsqueda de nuevos archivos para transcribir
-    # Busca archivos .wav en el directorio, ordenados por nombre (timestamp)
     NEW_AUDIOS=($(find "$AUDIO_DIR" -maxdepth 1 -name "*.wav" -print | sort))
     NUM_AUDIOS=${#NEW_AUDIOS[@]}
 
-    # 3.2. LÓGICA CRÍTICA DE SALIDA
-    # Comprobamos el estado del padre.
-    check_parent
-    PARENT_ALIVE=$? # $?=0 (Vivo), $?=1 (Muerto)
-
-    if [ $PARENT_ALIVE -ne 0 ] && [ $NUM_AUDIOS -eq 0 ]; then
-        # Condición de salida: Padre Muerto Y No hay Audios pendientes.
-        echo "INFO: Proceso padre terminado Y cola de audios vacía. CH9_whisper.sh se cierra con éxito."
-        break
-    fi
     
-    # 3.3. PROCESAMIENTO
     if [ $NUM_AUDIOS -gt 0 ]; then
         echo "INFO: ${NUM_AUDIOS} archivo(s) de audio encontrado(s) para transcripción."
         
@@ -140,8 +111,8 @@ while true; do
                 
                 # Conversión a OGG y Envío de Correo
                 MexDuration=$(ffprobe -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$audio" 2>/dev/null | tr -d '.' | awk '{print int($1/1000000)}')
-#'
                 
+#'
                 OGG_AUDIO="${audio%.wav}.ogg"
                 ffmpeg -i "$audio" -c:a libvorbis -qscale:a 5 "$OGG_AUDIO" -y > /dev/null 2>&1
                 
@@ -202,16 +173,11 @@ Se adjunta el archivo de audio ($ATTACHMENT_INFO) para su revisión.
 
         done
     else
-        # 3.4. Esperar y Notificar
-        if [ $PARENT_ALIVE -ne 0 ]; then
-            echo "INFO: Proceso padre inactivo. Sin audios pendientes. Esperando $SLEEP_TIME segundos antes del próximo chequeo final..."
-        else
-            echo "INFO: Proceso padre activo. Sin audios pendientes. Esperando $SLEEP_TIME segundos..."
-        fi
+        echo "INFO: Cola de audios vacía. Esperando $SLEEP_TIME segundos..."
     fi
 
     # Pausa antes del próximo chequeo
     sleep $SLEEP_TIME 
 done
 
-exit 0
+exit
