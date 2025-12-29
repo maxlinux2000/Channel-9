@@ -12,8 +12,8 @@ El sistema utiliza procesamiento de audio digital (VOX/Squelch) y modelos avanza
 
 ## 🚀 QUICK-START
 
-para hacer las cosas rápidas he añadido un instalador .run que con un click descarga, instala, y compila todo.
-En pocos minutos o incluso en media hora según la elocidad de tu CPU e internet, Channel 9 estará listo para usar.
+Para hacer las cosas más simples, he añadido un instalador "Channel9_Installer.run" que, con un click, descarga, instala, y compila todo.
+En pocos minutos o incluso en media hora según la velocidad de tu CPU y de internet, Channel 9 estará listo para usar.
 
 Lanza Channel9_Installer.run después haberle dado permiso de ejecución. Puedes hacerlo con el ratón desde una ventana o desde una terminal.
 

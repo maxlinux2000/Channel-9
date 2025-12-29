@@ -106,13 +106,13 @@ if ! tail -n +\$ARCHIVE_START_LINE "\$0" | base64 -d | tar -xzf - -C "\$INSTALL_
 fi
 
 # --- 3. Lanzamiento del Instalador Principal ---
-echo "--- 2. Lanzando el instalador principal (install_ch9_local.sh) ---"
+echo "--- 2. Lanzando el instalador principal (1_install_ch9_local.sh) ---"
 cd "\$INSTALL_PATH" || exit 1
 
 # Asegurarse de que el instalador principal sea ejecutable
-chmod +x install_ch9_local.sh
+chmod +x 1_install_ch9_local.sh
 
-./install_ch9_local.sh
+./1_install_ch9_local.sh
 
 INSTALLER_STATUS=\$?
 
