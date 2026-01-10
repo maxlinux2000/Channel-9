@@ -1,0 +1,121 @@
+#!/bin/bash
+# ==============================================================================
+# SCRIPT: dns-add-domain
+# Añade un nuevo dominio (zona) completo a la configuración de BIND9.
+# Uso: sudo dns-add-domain <DOMAIN_NAME> <SERVER_IP>
+# Ejemplo: sudo dns-add-domain mi.arca 192.168.1.2
+# ==============================================================================
+
+# --- VARIABLES DE CONFIGURACIÓN ---
+NAMED_CONF_LOCAL="/etc/bind/named.conf.local"
+ZONE_DIR="/etc/bind"
+# -----------------------------------
+
+# 1. Chequeo de permisos y argumentos
+if [ "$(id -u)" -ne 0 ]; then
+    echo "🚨 ERROR: Este script DEBE ejecutarse con 'sudo'."
+    echo "Uso: sudo dns-add-domain <DOMAIN_NAME> <SERVER_IP>"
+    exit 1
+fi
+
+if [ "$#" -ne 2 ]; then
+    echo "Uso: sudo dns-add-domain <DOMAIN_NAME> <SERVER_IP>"
+    echo "Ejemplo: sudo dns-add-domain mi.arca 192.168.1.2"
+    exit 1
+fi
+
+DOMAIN_NAME="$1"
+SERVER_IP="$2"
+ZONE_FILE="$ZONE_DIR/db.$DOMAIN_NAME"
+
+# ----------------------------------------------------------------------
+# 2. CONTROL DE ROBUSTEZ: Detectar inversión de argumentos (IP en $1)
+# ----------------------------------------------------------------------
+TestDomain=$(echo "$1" | tr -d '.')
+
+if [[ "$TestDomain" =~ ^[0-9]+$ ]]; then
+    echo -e "🚨 ERROR: Parece que has invertido los argumentos."
+    echo -e "El primer argumento (\$1) parece ser una dirección IP."
+    echo -e "\nUso Correcto:\n  sudo dns-add-domain <TU.DOMINIO> <IP.DEL.SERVIDOR>"
+    echo -e "\nEjemplo:\n  sudo dns-add-domain mi.almacen 192.168.1.5"
+    exit 1
+fi
+# ----------------------------------------------------------------------
+
+
+echo "--- Añadiendo nuevo dominio (zona) $DOMAIN_NAME ---"
+
+# 3. Comprobar si la zona ya existe en named.conf.local
+if grep -q "zone \"$DOMAIN_NAME\"" "$NAMED_CONF_LOCAL"; then
+    echo "INFO: La zona \"$DOMAIN_NAME\" ya está definida en $NAMED_CONF_LOCAL. Omitiendo la adición."
+    exit 0
+fi
+
+# 4. Crear el archivo de zona (db.<DOMAIN_NAME>)
+echo "Paso 1: Creando el archivo de zona $ZONE_FILE..."
+
+CURRENT_DATE=$(date +%Y%m%d)
+SERIAL_NUMBER="${CURRENT_DATE}01"
+
+sudo tee "$ZONE_FILE" > /dev/null <<EOF
+\$TTL 604800
+@ IN SOA $DOMAIN_NAME. root.$DOMAIN_NAME. (
+    $SERIAL_NUMBER ; Serial
+    604800         ; Refresh
+    86400          ; Retry
+    2419200        ; Expire
+    604800 )       ; Negative Cache TTL
+@ IN NS $DOMAIN_NAME.
+@ IN A $SERVER_IP
+www IN A $SERVER_IP
+mail IN A $SERVER_IP
+pop3 IN A $SERVER_IP
+imap IN A $SERVER_IP
+@ IN MX 10 mail.$DOMAIN_NAME.
+EOF
+
+# Ajustar permisos para BIND9
+sudo chown bind:bind "$ZONE_FILE"
+sudo chmod 640 "$ZONE_FILE"
+
+echo "✅ Archivo de zona $ZONE_FILE creado."
+
+# 5. Añadir la definición de zona a named.conf.local
+echo "Paso 2: Añadiendo la definición de la zona a $NAMED_CONF_LOCAL..."
+
+ZONE_DEFINITION=$(cat <<EOF
+zone "$DOMAIN_NAME" {
+    type master;
+    file "$ZONE_FILE";
+};
+EOF
+)
+
+echo "$ZONE_DEFINITION" | sudo tee -a "$NAMED_CONF_LOCAL" > /dev/null
+
+echo "✅ Definición de zona añadida."
+
+# 6. Verificación de sintaxis y Recarga de BIND9
+echo "Paso 3: Verificando sintaxis y recargando BIND9..."
+
+sudo named-checkconf "$NAMED_CONF_LOCAL"
+if [ $? -ne 0 ]; then
+    echo "🚨 ERROR de sintaxis en $NAMED_CONF_LOCAL. BIND9 NO se recargó."
+    exit 1
+fi
+
+sudo named-checkzone "$DOMAIN_NAME" "$ZONE_FILE"
+if [ $? -ne 0 ]; then
+    echo "🚨 ERROR de sintaxis en el nuevo archivo de zona $ZONE_FILE. BIND9 NO se recargó."
+    exit 1
+fi
+
+sudo systemctl reload bind9
+
+if [ $? -eq 0 ]; then
+    echo "🎉 ¡Éxito! El dominio $DOMAIN_NAME ha sido añadido y BIND9 recargado."
+else
+    echo "🚨 ERROR: Fallo al recargar BIND9. Revise los logs."
+    exit 1
+fi
+

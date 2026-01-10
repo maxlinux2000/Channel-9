@@ -1,0 +1,73 @@
+#!/bin/bash
+# ==============================================================================
+# SCRIPT: dns-remove-domain
+# Elimina un dominio (zona) completo de la configuración de BIND9.
+# Uso: sudo dns-remove-domain <DOMAIN_NAME>
+# Ejemplo: sudo dns-remove-domain mi.arca
+# ==============================================================================
+
+# --- VARIABLES DE CONFIGURACIÓN ---
+NAMED_CONF_LOCAL="/etc/bind/named.conf.local"
+ZONE_DIR="/etc/bind"
+# -----------------------------------
+
+# 1. Chequeo de permisos y argumentos
+if [ "$(id -u)" -ne 0 ]; then
+    echo "🚨 ERROR: Este script DEBE ejecutarse con 'sudo'."
+    echo "Uso: sudo dns-remove-domain <DOMAIN_NAME>"
+    exit 1
+fi
+
+if [ "$#" -ne 1 ]; then
+    echo "Uso: sudo dns-remove-domain <DOMAIN_NAME>"
+    echo "Ejemplo: sudo dns-remove-domain mi.arca"
+    exit 1
+fi
+
+DOMAIN_NAME="$1"
+ZONE_FILE="$ZONE_DIR/db.$DOMAIN_NAME"
+
+echo "--- Eliminando dominio (zona) $DOMAIN_NAME ---"
+
+# 2. Comprobar si la zona existe
+if ! grep -q "zone \"$DOMAIN_NAME\"" "$NAMED_CONF_LOCAL"; then
+    echo "INFO: La zona \"$DOMAIN_NAME\" no está definida en $NAMED_CONF_LOCAL. Omitiendo la eliminación de named.conf.local."
+else
+    # 3. Eliminar la definición de zona de named.conf.local
+    echo "Paso 1: Eliminando la definición de la zona de $NAMED_CONF_LOCAL..."
+    
+    # sed busca el inicio de la definición de zona y elimina todas las líneas hasta el cierre '};'
+    sudo sed -i "/zone \"$DOMAIN_NAME\" {/,/};/d" "$NAMED_CONF_LOCAL"
+    
+    echo "✅ Definición de zona eliminada."
+fi
+
+# 4. Eliminar el archivo de zona
+if [ -f "$ZONE_FILE" ]; then
+    echo "Paso 2: Eliminando el archivo de zona $ZONE_FILE..."
+    sudo rm "$ZONE_FILE"
+    echo "✅ Archivo de zona eliminado."
+else
+    echo "INFO: El archivo de zona $ZONE_FILE no existe. Omitiendo la eliminación del archivo."
+fi
+
+# 5. Recargar BIND9 y verificar la sintaxis
+echo "Paso 3: Verificando sintaxis y recargando BIND9..."
+
+# Verificar named.conf.local (si hay errores, la recarga fallará)
+sudo named-checkconf "$NAMED_CONF_LOCAL"
+if [ $? -ne 0 ]; then
+    echo "🚨 ERROR de sintaxis en $NAMED_CONF_LOCAL DESPUÉS de la eliminación. BIND9 NO se recargó."
+    exit 1
+fi
+
+# Recargar servicio
+sudo systemctl reload bind9
+
+if [ $? -eq 0 ]; then
+    echo "🎉 ¡Éxito! El dominio $DOMAIN_NAME ha sido eliminado y BIND9 recargado."
+else
+    echo "🚨 ERROR: Fallo al recargar BIND9. Revise los logs: journalctl -u bind9"
+    exit 1
+fi
+

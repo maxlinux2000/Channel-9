@@ -17,15 +17,24 @@ LOG_FILE="$HOME/ch9_monitor.log"
 touch "$LOG_FILE"
 
 # 5. PREPARACIÓN DEL ENTORNO DE GRABACIÓN
+# CRÍTICO: El subdirectorio 'vox' se usa para almacenar el audio temporalmente.
 mkdir -p $RAMDISK/$USER/vox
 rm $RAMDISK/$USER/audio*.wav 2>/dev/null
 
 # ------------------------------------------------------------------------------
-# 📢 INFORMACIÓN DEL SERVICIO ASÍNCRONO DE WHISPER (AHORA SYSTEMD)
+# 🚨 LANZAMIENTO DEL PROCESO ASÍNCRONO DE WHISPER
 # ------------------------------------------------------------------------------
-echo "--- La Transcripción Asíncrona la gestiona el servicio 'ch9-whisper.service' ---"
-echo "INFO: Asegúrese de que el servicio esté activo para procesar el audio."
-# El proceso de CH9_monitor.sh se centra ahora sólo en la grabación.
+WHISPER_SCRIPT="$HOME/.local/bin/CH9_whisper.sh"
+echo "--- Iniciando Monitor de Transcripción (CH9_whisper.sh) en segundo plano ---"
+
+if [ -f "$WHISPER_SCRIPT" ]; then
+    # Lanzamos el script de Whisper en segundo plano, pasándole nuestro PID ($$)
+    "$WHISPER_SCRIPT" "$$" & 
+    WHISPER_PID=$!
+    echo "INFO: CH9_whisper.sh lanzado con PID: $WHISPER_PID. Seguirá activo hasta terminar el trabajo."
+else
+    echo "🚨 ERROR: $WHISPER_SCRIPT no encontrado. El audio NO se transcribirá."
+fi
 # ------------------------------------------------------------------------------
 
 
@@ -56,9 +65,9 @@ while true; do
     du $RAMDISK/$USER/*.wav >> $RAMDISK/$USER/size.log
 
     for audio in $(cat $RAMDISK/$USER/list.log); do
-        size=$(cat "$audio" | wc -l) 
+        size=$(cat "$audio" | wc -l) # Citamos $audio
         
-        if [ "$size" == "0" ]; then 
+        if [ "$size" == "0" ]; then # Citamos $size
             echo "$audio file empty"
             rm "$audio"
         else
@@ -101,4 +110,6 @@ while true; do
     
 done
 
-exit
+# Al salir (p. ej. Ctrl+C), simplemente se sale. El proceso hijo CH9_whisper.sh
+# debe gestionar su propia finalización.
+

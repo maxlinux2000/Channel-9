@@ -7,6 +7,40 @@
 # ==============================================================================
 
 
+# ==============================================================================
+# FUNCIÓN DE DETECCIÓN E INSTALACIÓN: GESTOR GRÁFICO DE USUARIOS
+# ==============================================================================
+install_user_manager_if_rpi() {
+    echo "--- Comprobando si el sistema es ARM (Raspberry Pi OS) para gestor de usuarios ---"
+    
+    # Obtener la arquitectura de la máquina
+    local ARCHITECTURE=$(dpkg --print-architecture)
+    
+    # Comprobar si es alguna variante ARM (Raspberry Pi OS usa armhf o arm64)
+    if [[ "$ARCHITECTURE" == "armhf" || "$ARCHITECTURE" == "arm64" ]]; then
+        echo "INFO: Arquitectura detectada: $ARCHITECTURE. Asumiendo entorno Raspberry Pi/ARM."
+        
+        # El gestor de usuarios gráfico más robusto es parte de gnome-system-tools
+        if ! dpkg -l | grep -q "gnome-system-tools"; then
+            echo "🚀 Instalando gnome-system-tools (Gestor de Usuarios Gráfico)..."
+            # Asumimos que 'apt update' ya se ha ejecutado en los pasos iniciales.
+            sudo apt install gnome-system-tools -y
+            
+            if [ $? -eq 0 ]; then
+                echo "✅ gnome-system-tools instalado correctamente."
+            else
+                echo "🚨 Advertencia: Error al instalar gnome-system-tools. Puede ser necesario instalarlo manualmente."
+            fi
+        else
+            echo "INFO: gnome-system-tools ya está instalado. Omitiendo."
+        fi
+    else
+        echo "INFO: Arquitectura detectada: $ARCHITECTURE. No es un entorno ARM típico de Raspberry Pi OS. Omitiendo."
+    fi
+}
+# ==============================================================================
+
+
 # --- 9.1. controlamos si las interfaces de red usan nombres tradicionales (canonical) o no y los forzamos ---
 echo "--- 9.1 comprobamos los nombres de las interfaces de red ---"
 if [ -f "force_canonical_netnames.sh" ]; then
@@ -212,6 +246,13 @@ else
     echo "⚠️ Advertencia: create_homepage.sh no encontrado. No se generará la página de inicio."
 fi
 
+# ------------------------------------------------------------------------------
+# 7.1. Instalación de Herramientas Gráficas Adicionales (Raspberry Pi)
+# ------------------------------------------------------------------------------
+install_user_manager_if_rpi
+# ------------------------------------------------------------------------------
+
+
 # --- 8. Instalación Local de Scripts y Launchers ---
 echo "--- 8. Instalación local de Channel-9 scripts y lanzadores ---"
 
@@ -282,7 +323,47 @@ Categories=Settings;Utility;
 StartupNotify=true
 EOF
 
-# --- 9. Configuración de Infraestructura de Red (BIND9 y Correo) (MODIFICADO) ---
+
+
+# INSTALACIÓN DE ICONOS
+echo "Instalando iconos en $ICONS_DIR..."
+
+# ------------------------------------------------------------------------------
+# 8.1. Configuración Inicial del Archivo de Variables (.CH9-config)
+# ------------------------------------------------------------------------------
+echo "--- 8.1. Verificación de variables críticas en $HOME/.CH9-config ---"
+CH9_CONFIG_FILE="$HOME/.CH9-config"
+
+# CRÍTICO: Aseguramos la existencia del archivo de configuración
+touch "$CH9_CONFIG_FILE"
+
+# Añadir variables críticas si no existen, usando sed para asegurar que la variable no esté ya ahí
+# ARCHIVE_EMAIL_TO: Correo donde se envían todos los mensajes no enrutados.
+if ! grep -q "^ARCHIVE_EMAIL_TO=" "$CH9_CONFIG_FILE"; then
+    echo 'ARCHIVE_EMAIL_TO="archive@mi.atalaya"' >> "$CH9_CONFIG_FILE"
+    echo "INFO: Añadida variable ARCHIVE_EMAIL_TO."
+fi
+
+# DOMAIN_ATALAYA: Dominio local usado para construir las direcciones de correo de usuario (ej. marcos@mi.atalaya)
+if ! grep -q "^DOMAIN_ATALAYA=" "$CH9_CONFIG_FILE"; then
+    echo 'DOMAIN_ATALAYA="mi.atalaya"' >> "$CH9_CONFIG_FILE"
+    echo "INFO: Añadida variable DOMAIN_ATALAYA."
+fi
+
+# Configuración básica de tiempo VOX
+if ! grep -q "^MinMexDuration=" "$CH9_CONFIG_FILE"; then
+    echo 'MinMexDuration=2' >> "$CH9_CONFIG_FILE"
+fi
+
+if ! grep -q "^TIME=" "$CH9_CONFIG_FILE"; then
+    echo 'TIME=0.5' >> "$CH9_CONFIG_FILE"
+fi
+
+echo "INFO: Variables de configuración iniciales aseguradas."
+# ------------------------------------------------------------------------------
+
+
+# --- 9. Configuración de Infraestructura de Red (BIND9 y Correo) ---
 echo "--- 9. Configurando Infraestructura de Red y Correo (ch9_infra_setup.sh) ---"
 
 # CRÍTICO: Comprobación de existencia de ISPConfig
@@ -295,9 +376,48 @@ else
         echo "🚀 Ejecutando ch9_infra_setup.sh..."
         ./ch9_infra_setup.sh || { echo "🚨 Error al configurar la infraestructura de red/correo. Continuación no garantizada."; }
     else
-        echo "🚨 Error: ch9_infra_setup.sh no encontrado. No se configurará BIND9/Dominio/Cuentas de Correo."
+        echo "🚨 Error: ch9_infra_setup.sh no encontrado. Se configurará SÓLO el DNS forwarder."
     fi
+
+    # ----------------------------------------------------------------------
+    # 9.1. CRÍTICO: Configuración de DNS Forwarders en BIND9
+    # Esto asegura que BIND pueda resolver dominios de Internet.
+    # ----------------------------------------------------------------------
+    NAMED_OPTIONS="/etc/bind/named.conf.options"
+    
+    if grep -q "forwarders {" "$NAMED_OPTIONS"; then
+        echo "INFO: La sección 'forwarders' ya existe en BIND9. Omitiendo configuración."
+    else
+        echo "🚀 Añadiendo sección 'forwarders' y 'forward only' a $NAMED_OPTIONS..."
+        
+        # Insertar el bloque de forwarders y forward only
+        # Utilizamos 'sudo sed' para insertar justo antes de 'dnssec-validation auto;'
+        # Se añaden escapes (\\) para que la shell no interprete las llaves/punto y coma.
+        
+        # El patrón de inserción es: buscar 'dnssec-validation auto;' e insertar las líneas antes.
+        
+        INSERT_TEXT='
+    // CRÍTICO: Añadido por Channel-9 para resolver Internet
+    forwarders {
+        8.8.8.8;
+        1.1.1.1;
+    };
+    forward only;
+
+'
+        # Usamos Perl para una inserción multilinea más robusta que sed.
+        sudo perl -i -pe '
+            BEGIN {$/ = undef} 
+            s/(dnssec-validation auto;)/'"$INSERT_TEXT"'\n\1/s
+        ' "$NAMED_OPTIONS" || { echo "🚨 Error crítico al configurar BIND9 forwarders."; }
+        
+        echo "INFO: Configuración de forwarders completada. Recargando BIND9..."
+        sudo systemctl reload bind9 || echo "⚠️ Advertencia: No se pudo recargar BIND9. Compruebe errores."
+    fi
+    # ----------------------------------------------------------------------
+
 fi
+# ------------------------------------------------------------------------------
 
 
 
@@ -348,6 +468,23 @@ echo "--- 11. Finalización ---"
 echo "Actualizando la base de datos de lanzadores y la caché de iconos..."
 update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null
 gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null
+
+# ------------------------------------------------------------------------------
+# 12. REDIRECCIÓN DE RAÍZ A DIRECTORIO DE USUARIO (~usuario/)
+# ------------------------------------------------------------------------------
+echo "--- Configurando redirección de la raíz (/) a la carpeta del usuario (~$USER) ---"
+# Usamos el usuario del script (asumiendo que es el usuario de Channel-9)
+
+# Añadimos la directiva de redirección. La barra invertida escapa las comillas.
+REDIRECT_LINE='url.redirect = ( "^/$" => "/~'${USER_NAME}'/" )'
+
+if ! grep -q "^url.redirect" /etc/lighttpd/lighttpd.conf; then
+    echo "$REDIRECT_LINE" | sudo tee -a /etc/lighttpd/lighttpd.conf
+    echo "INFO: Redirección de Lighttpd configurada."
+    sudo systemctl restart lighttpd
+else
+    echo "⚠️ Advertencia: La directiva url.redirect ya existe. No se modificó el archivo."
+fi
 
 echo "======================================================================="
 echo "✅ INSTALACIÓN BASE COMPLETA DEL PROYECTO CHANNEL-9."

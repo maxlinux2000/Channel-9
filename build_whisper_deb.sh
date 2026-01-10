@@ -115,6 +115,7 @@ cd ..
 rm -rf "$BUILD_DIR" 
 rm -rf "$STAGING_DIR"
 rm -rf "$FPM_TMP_BASE"
+rm -rf whisper_staging
 
 echo "=========================================================="
 echo "✅ ¡PAQUETE WHISPER .DEB CREADO CON ÉXITO!"
